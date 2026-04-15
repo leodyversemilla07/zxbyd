@@ -1,0 +1,32 @@
+[project]
+name = "zxbyd"
+version = "0.1.0"
+description = "Probe Philippine government procurement — search bids, track awards, detect anomalies"
+readme = "README.md"
+authors = [
+    { name = "Leodyver S. Semilla", email = "leodyversemilla07@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28.1",
+    "rich>=15.0.0",
+    "selectolax>=0.4.7",
+    "typer>=0.24.1",
+]
+
+[project.scripts]
+zxbyd = "zxbyd.main:app"
+
+[project.optional-dependencies]
+browser = [
+    "playwright>=1.58.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.6,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
