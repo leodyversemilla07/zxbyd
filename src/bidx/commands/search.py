@@ -16,7 +16,7 @@ def notices(
     cache_only: bool = typer.Option(False, "--cache-only", help="Only search local cache (no scraping)."),
 ) -> None:
     """Search procurement notices by keyword."""
-    from zxbyd.ui.display import info, error
+    from zxbyd.ui import info
     info(f'Searching PhilGEPS for "{query}"...')
     # TODO: implement search
     typer.echo("Search not yet implemented.")
@@ -27,7 +27,7 @@ def recent(
     limit: int = typer.Option(20, "--limit", "-n", help="Number of recent notices."),
 ) -> None:
     """Show recent procurement notices."""
-    from zxbyd.ui.display import info
+    from zxbyd.ui import info
     info("Fetching recent notices...")
     # TODO: implement
     typer.echo("Not yet implemented.")

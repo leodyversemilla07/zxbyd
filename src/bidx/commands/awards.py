@@ -15,7 +15,7 @@ def list(
     cache_only: bool = typer.Option(False, "--cache-only", help="Only search local cache."),
 ) -> None:
     """List recent contract awards."""
-    from zxbyd.ui.display import info
+    from zxbyd.ui import info
     info("Fetching recent awards from PhilGEPS...")
     # TODO: implement
     typer.echo("Awards not yet implemented.")

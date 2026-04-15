@@ -13,7 +13,7 @@ def show(
     force: bool = typer.Option(False, "--force", "-f", help="Re-fetch even if cached."),
 ) -> None:
     """Fetch full details for a procurement notice by reference ID."""
-    from zxbyd.ui.display import info
+    from zxbyd.ui import info
     info(f"Fetching details for {ref_id}...")
     # TODO: implement
     typer.echo("Detail not yet implemented.")
