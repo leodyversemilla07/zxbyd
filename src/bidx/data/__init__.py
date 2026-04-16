@@ -91,15 +91,27 @@ def upsert_notice(conn: sqlite3.Connection, notice: dict[str, Any]) -> None:
             title=excluded.title,
             agency=excluded.agency,
             category=excluded.category,
-            abc=excluded.abc,
-            mode=excluded.mode,
-            area_of_delivery=excluded.area_of_delivery,
+            abc=COALESCE(excluded.abc, notices.abc),
+            mode=COALESCE(excluded.mode, notices.mode),
+            area_of_delivery=COALESCE(excluded.area_of_delivery, notices.area_of_delivery),
             published_date=excluded.published_date,
             closing_date=excluded.closing_date,
-            description=excluded.description,
-            documents=excluded.documents,
+            description=COALESCE(excluded.description, notices.description),
+            documents=COALESCE(excluded.documents, notices.documents),
             cached_at=datetime('now')
-    """, notice)
+    """, {
+        "ref_no": notice.get("ref_no", ""),
+        "title": notice.get("title", ""),
+        "agency": notice.get("agency", ""),
+        "category": notice.get("category", ""),
+        "abc": notice.get("abc"),
+        "mode": notice.get("mode", ""),
+        "area_of_delivery": notice.get("area_of_delivery", ""),
+        "published_date": notice.get("published_date", ""),
+        "closing_date": notice.get("closing_date", ""),
+        "description": notice.get("description", ""),
+        "documents": notice.get("documents", ""),
+    })
 
 
 def upsert_award(conn: sqlite3.Connection, award: dict[str, Any]) -> None:

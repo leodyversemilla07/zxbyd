@@ -49,9 +49,13 @@ from zxbyd.commands.detail import detail_app
 from zxbyd.commands.awards import awards_app
 from zxbyd.commands.profiles import profiles_app
 from zxbyd.commands.analysis import analysis_app
+from zxbyd.commands.report import report
+from zxbyd.commands.cache import cache_app
 
 app.add_typer(search_app, name="search", help="Search procurement notices.")
 app.add_typer(detail_app, name="detail", help="Fetch notice details.")
 app.add_typer(awards_app, name="awards", help="List contract awards.")
 app.add_typer(profiles_app, name="profile", help="Agency and supplier profiles.")
 app.add_typer(analysis_app, name="analysis", help="Anomaly detection and probing.")
+app.add_typer(cache_app, name="cache", help="Manage local cache.")
+app.command(name="report")(report)

@@ -37,9 +37,9 @@ uv run pytest tests/ -v
 ## Architecture
 
 - Entrypoint: `src/zxbyd/main.py` — Typer app with sub-app registration
-- Commands: `src/zxbyd/commands/` — one file per command group
-- Scraper: `src/zxbyd/sources/` — Playwright + selectolax
-- Analysis: `src/zxbyd/analysis/` — heuristics, Finding/ProbeResult dataclasses
+- Commands: `src/zxbyd/commands/` — search, detail, awards, profiles, analysis, report, cache
+- Scraper: `src/zxbyd/sources/` — httpx + selectolax (retry, rate limiting)
+- Analysis: `src/zxbyd/analysis/` — heuristics, Finding/ProbeResult dataclasses, BENCHMARKS dict
 - Cache: `src/zxbyd/data/` — SQLite with context manager
 - Display: `src/zxbyd/ui/` — Rich terminal rendering
 
