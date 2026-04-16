@@ -36,6 +36,8 @@ def _init_db(conn: sqlite3.Connection) -> None:
             closing_date TEXT,
             description TEXT,
             documents TEXT,
+            status TEXT DEFAULT '',
+            solicitation_number TEXT DEFAULT '',
             cached_at TEXT DEFAULT (datetime('now'))
         );
 
@@ -56,6 +58,13 @@ def _init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_awards_supplier ON awards(supplier);
         CREATE INDEX IF NOT EXISTS idx_awards_agency ON awards(agency);
     """)
+
+    # Migrate: add columns if they don't exist (for existing DBs)
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(notices)").fetchall()}
+    if "status" not in existing:
+        conn.execute("ALTER TABLE notices ADD COLUMN status TEXT DEFAULT ''")
+    if "solicitation_number" not in existing:
+        conn.execute("ALTER TABLE notices ADD COLUMN solicitation_number TEXT DEFAULT ''")
 
 
 @contextmanager
@@ -83,10 +92,10 @@ def upsert_notice(conn: sqlite3.Connection, notice: dict[str, Any]) -> None:
     conn.execute("""
         INSERT INTO notices (ref_no, title, agency, category, abc, mode,
                            area_of_delivery, published_date, closing_date,
-                           description, documents)
+                           description, documents, status, solicitation_number)
         VALUES (:ref_no, :title, :agency, :category, :abc, :mode,
                 :area_of_delivery, :published_date, :closing_date,
-                :description, :documents)
+                :description, :documents, :status, :solicitation_number)
         ON CONFLICT(ref_no) DO UPDATE SET
             title=excluded.title,
             agency=excluded.agency,
@@ -98,6 +107,8 @@ def upsert_notice(conn: sqlite3.Connection, notice: dict[str, Any]) -> None:
             closing_date=excluded.closing_date,
             description=COALESCE(excluded.description, notices.description),
             documents=COALESCE(excluded.documents, notices.documents),
+            status=COALESCE(NULLIF(excluded.status, ''), notices.status),
+            solicitation_number=COALESCE(NULLIF(excluded.solicitation_number, ''), notices.solicitation_number),
             cached_at=datetime('now')
     """, {
         "ref_no": notice.get("ref_no", ""),
@@ -111,6 +122,8 @@ def upsert_notice(conn: sqlite3.Connection, notice: dict[str, Any]) -> None:
         "closing_date": notice.get("closing_date", ""),
         "description": notice.get("description", ""),
         "documents": notice.get("documents", ""),
+        "status": notice.get("status", ""),
+        "solicitation_number": notice.get("solicitation_number", ""),
     })
 
 
