@@ -1,10 +1,14 @@
-"""Awards commands — check status, show awarded contracts."""
+"""Awards commands — check status, import, and list awards."""
 
 from __future__ import annotations
 
 import typer
 
 awards_app = typer.Typer(help="Track contract awards and status.")
+
+# Note: PhilGEPS award details (supplier name, amount) are behind authentication.
+# The printable detail pages only show status (Active/Closed/Awarded).
+# Use 'zxbyd awards import' to load award data exported from your PhilGEPS dashboard.
 
 
 @awards_app.command()
@@ -14,8 +18,7 @@ def check(
 ) -> None:
     """Re-fetch status for notices past their closing date.
 
-    PhilGEPS doesn't expose award details (supplier, amount) without JS rendering,
-    but we can detect status changes (Active -> Closed/Awarded) via the printable page.
+    Detects status changes (Active -> Closed/Awarded) via printable pages.
     """
     from datetime import datetime
 
@@ -25,10 +28,7 @@ def check(
     from zxbyd.data import connection, upsert_notice
     from zxbyd.sources import get_notice_detail
 
-    today = datetime.now().strftime("%Y-%m-%d")
-
     with connection() as conn:
-        # Find notices past closing date
         if force:
             query = """
                 SELECT ref_no, title, agency, closing_date, status
@@ -37,7 +37,6 @@ def check(
                 ORDER BY closing_date DESC
                 LIMIT ?
             """
-            rows = conn.execute(query, (limit,)).fetchall()
         else:
             query = """
                 SELECT ref_no, title, agency, closing_date, status
@@ -47,7 +46,7 @@ def check(
                 ORDER BY closing_date DESC
                 LIMIT ?
             """
-            rows = conn.execute(query, (limit,)).fetchall()
+        rows = conn.execute(query, (limit,)).fetchall()
 
         if not rows:
             info("No notices to check. Run 'zxbyd search notices' first.")
@@ -78,7 +77,6 @@ def check(
                     })
                     updated += 1
                 elif new_status:
-                    # Update status even if same (refresh timestamp)
                     upsert_notice(conn, {"ref_no": ref, "status": new_status})
             except Exception:
                 continue
@@ -109,6 +107,109 @@ def check(
 
 
 @awards_app.command()
+def import_(
+    filepath: str = typer.Argument(help="CSV or JSON file with award data."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without saving."),
+) -> None:
+    """Import award data from CSV/JSON.
+
+    Expected columns/keys: ref_no, title, agency, supplier, amount, award_date, mode
+
+    Export your PhilGEPS award data from the PhilGEPS dashboard,
+    then import it here to enable supplier profiles and repeat-awardee analysis.
+
+    Example CSV:
+        ref_no,title,agency,supplier,amount,award_date,mode
+        12600000,Supply of PPE,BFP-NCR,ACME CORP,17500000,2026-01-30,Public Bidding
+    """
+    import csv
+    import json as json_mod
+    from pathlib import Path
+
+    from rich.table import Table
+
+    from zxbyd.ui import info, console, success, warn
+    from zxbyd.data import connection, upsert_award
+
+    path = Path(filepath)
+    if not path.exists():
+        warn(f"File not found: {filepath}")
+        raise typer.Exit(1)
+
+    records = []
+
+    if path.suffix.lower() == ".json":
+        data = json_mod.loads(path.read_text())
+        if isinstance(data, list):
+            records = data
+        elif isinstance(data, dict) and "awards" in data:
+            records = data["awards"]
+        else:
+            warn("JSON must be a list of objects or have an 'awards' key")
+            raise typer.Exit(1)
+
+    elif path.suffix.lower() == ".csv":
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            records = [row for row in reader]
+    else:
+        warn(f"Unsupported format: {path.suffix} (use .csv or .json)")
+        raise typer.Exit(1)
+
+    if not records:
+        warn("No records found in file")
+        raise typer.Exit(1)
+
+    # Normalize records
+    normalized = []
+    for r in records:
+        normalized.append({
+            "ref_no": str(r.get("ref_no", "")),
+            "title": str(r.get("title", "")),
+            "agency": str(r.get("agency", "")),
+            "supplier": str(r.get("supplier", "")),
+            "amount": float(r.get("amount", 0) or 0),
+            "award_date": str(r.get("award_date", "")),
+            "mode": str(r.get("mode", "")),
+        })
+
+    # Preview
+    table = Table(title=f"Import Preview ({len(normalized)} records)", show_lines=True)
+    table.add_column("Ref #", style="cyan", no_wrap=True)
+    table.add_column("Supplier", max_width=30)
+    table.add_column("Amount", justify="right", style="green")
+    table.add_column("Agency", max_width=25)
+
+    for r in normalized[:10]:
+        table.add_row(
+            r["ref_no"],
+            (r["supplier"] or "—")[:30],
+            f"₱{r['amount']:,.0f}" if r["amount"] else "—",
+            (r["agency"] or "—")[:25],
+        )
+
+    if len(normalized) > 10:
+        table.add_row("...", f"({len(normalized) - 10} more)", "", "")
+
+    console.print(table)
+
+    if dry_run:
+        info("Dry run — no data saved.")
+        return
+
+    # Import
+    with connection() as conn:
+        imported = 0
+        for r in normalized:
+            if r["supplier"] and r["ref_no"]:
+                upsert_award(conn, r)
+                imported += 1
+        conn.commit()
+
+    success(f"Imported {imported} award(s)")
+
+
+@awards_app.command()
 def status(
     filter_status: str = typer.Option("", "--filter", "-s", help="Filter by status (Active/Closed/Awarded)."),
     limit: int = typer.Option(50, "--limit", "-n", help="Max results."),
@@ -120,7 +221,6 @@ def status(
     from zxbyd.data import connection
 
     with connection() as conn:
-        # Status summary
         summary = conn.execute("""
             SELECT CASE WHEN status = '' THEN '(unknown)' ELSE status END as st,
                    COUNT(*) as cnt
@@ -137,7 +237,6 @@ def status(
         for row in summary:
             console.print(f"  {row['st']}: {row['cnt']}")
 
-        # Detailed list
         if filter_status:
             query = """
                 SELECT ref_no, title, agency, abc, status, closing_date
@@ -183,13 +282,13 @@ def status(
         console.print(table)
 
 
-@awards_app.command()
-def list(
+@awards_app.command("list")
+def list_awards(
     agency: str | None = typer.Option(None, "--agency", "-a", help="Filter by agency name."),
     supplier: str | None = typer.Option(None, "--supplier", "-s", help="Filter by supplier name."),
     limit: int = typer.Option(50, "--limit", "-n", help="Max results."),
 ) -> None:
-    """List cached contract awards (requires award data in DB)."""
+    """List cached contract awards."""
     from zxbyd.ui import info, show_awards
     from zxbyd.data import connection, search_awards as db_search_awards
 
@@ -197,7 +296,7 @@ def list(
         results = db_search_awards(conn, agency=agency, supplier=supplier, limit=limit)
 
     if not results:
-        info("No award data cached. PhilGEPS awards require JS rendering — use 'zxbyd detail show' on individual notices.")
+        info("No award data cached. Use 'zxbyd awards import' to load award data from CSV/JSON.")
         return
 
     show_awards(results, agency=agency, supplier=supplier)
