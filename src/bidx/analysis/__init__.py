@@ -17,6 +17,17 @@ class Confidence(str, Enum):
 
 
 @dataclass
+class ExtractionResult:
+    """Result of unit count extraction from notice text."""
+
+    unit_count: int | None = None
+    unit_type: str = ""
+    confidence: str = "high"  # high = single clean item, medium = inferred, low = mixed/uncertain
+    is_mixed: bool = False  # True when ABC covers multiple distinct item types
+    items: list[dict[str, Any]] = field(default_factory=list)  # per-item breakdown when mixed
+
+
+@dataclass
 class Finding:
     """A single risk finding from probe analysis."""
 
@@ -158,66 +169,205 @@ def _normalize_unit_type(raw: str) -> str:
 def _extract_unit_count(title: str, description: str) -> tuple[int | None, str]:
     """Extract unit count from title/description.
 
-    Returns (count, unit_type) — e.g., (500, "laptop"), (30, "desktop").
+    DEPRECATED: Use _extract_units() which returns ExtractionResult.
+    Kept for backward compat — returns (count, unit_type) tuple.
+    """
+    result = _extract_units(title, description)
+    return result.unit_count, result.unit_type
+
+
+# Regex patterns for quantity+item extraction
+_PAT_PAREN = re.compile(
+    r'(\w+)\s*\((\d[\d,]*)\)\s*(?:UNITS?|pcs?|sets?|units?)\s*(?:OF\s+)?(?:BRAND[- ]?NEW\s+)?([\w][\w\s-]*?)(?:\s+(?:WITH|FOR|AND|,|\.|$))',
+    re.IGNORECASE,
+)
+_PAT_DIGIT = re.compile(
+    r'(\d[\d,]*)\s*(?:UNITS?|pcs?|sets?)\s*[-\s]*(?:OF\s+)?(?:BRAND[- ]?NEW\s+)?([\w][\w\s-]*?)(?:\s+(?:WITH|FOR|AND|,|\.|$))',
+    re.IGNORECASE,
+)
+_PAT_WORD = re.compile(
+    r'\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b\s+(?:UNITS?\s+)?(?:OF\s+)?([\w][\w\s-]*?)(?:\s+(?:WITH|FOR|AND|,|\.|$))',
+    re.IGNORECASE,
+)
+
+
+def _find_all_quantity_items(text: str) -> list[tuple[int, str]]:
+    """Find ALL quantity+item_type pairs in text.
+
+    Returns list of (count, normalized_type) for every match.
+    This is key for detecting mixed procurements.
+    """
+    pairs = []
+
+    # Digit with parens: "FORTY (40) UNITS OF LAPTOP"
+    for m in _PAT_PAREN.finditer(text):
+        count = int(m.group(2).replace(',', ''))
+        item = _normalize_unit_type(m.group(3))
+        if count > 0 and item and item not in ("lot", "unit"):
+            pairs.append((count, item))
+
+    # Direct digit: "500 UNITS LAPTOP"
+    for m in _PAT_DIGIT.finditer(text):
+        count = int(m.group(1).replace(',', ''))
+        item = _normalize_unit_type(m.group(2))
+        if count > 0 and item and item not in ("lot", "unit"):
+            pairs.append((count, item))
+
+    # Word number: "FORTY units of laptop"
+    for m in _PAT_WORD.finditer(text):
+        count = _word_to_int(m.group(1))
+        item = _normalize_unit_type(m.group(2))
+        if count and count > 0 and item and item not in ("lot", "unit"):
+            pairs.append((count, item))
+
+    return pairs
+
+
+def _is_mixed_procurement(title: str) -> bool:
+    """Detect if a title describes a mixed/bundled procurement.
+
+    Signals:
+      - Slash-separated items: "Desktop / Laptop / Tablet"
+      - Multiple quantity+item pairs with different types
+      - "AND" between quantity+item groups
+    """
+    # Check for slash-separated items (common in PhilGEPS)
+    if "/" in title:
+        parts = [p.strip() for p in title.split("/")]
+        item_types = set()
+        for part in parts:
+            for key in BENCHMARKS:
+                if key in part.lower():
+                    item_types.add(key)
+        if len(item_types) >= 2:
+            return True
+
+    # Primary signal: multiple quantity+item pairs with DIFFERENT types
+    title_pairs = _find_all_quantity_items(title)
+    if len(title_pairs) >= 2:
+        types = {p[1] for p in title_pairs}
+        if len(types) >= 2:
+            return True
+
+    # Strong signal: 2+ different benchmark item types mentioned (even without quantities)
+    # e.g., "LAPTOPS AND PRINTERS" or "Laptop Computer... Two (2) Units Printer"
+    title_lower = title.lower()
+    # Exclude "computer" as standalone if paired with specific types (laptop, desktop)
+    # since "laptop computer" and "desktop computer" are single items
+    found_types = set()
+    for key in BENCHMARKS:
+        if key in ("computer", "unit", "item", "lot"):
+            continue  # too generic
+        if key in title_lower:
+            found_types.add(key)
+
+    # Special case: "laptop" and "desktop" count as different types
+    # but "laptop" + "computer" doesn't (since "laptop computer" is one item)
+    if "laptop" in found_types and "desktop" in found_types:
+        return True
+
+    # If 2+ non-computer benchmark types found, it's mixed
+    if len(found_types) >= 2:
+        return True
+
+    # Secondary signal: "X and Y" where X and Y are both benchmark items
+    # But skip common false positives like "Supply and Delivery"
+    skip_phrases = {"supply and delivery", "installation and configuration",
+                    "testing and commissioning", "bids and awards",
+                    "design and build", "supply and install"}
+    title_lower = title.lower()
+    for phrase in skip_phrases:
+        title_lower = title_lower.replace(phrase, " ")
+
+    and_parts = re.split(r'\band\b', title_lower)
+    if len(and_parts) >= 2:
+        # Check if different item types appear in different segments
+        segment_types = []
+        for part in and_parts:
+            types_in_segment = set()
+            for key in BENCHMARKS:
+                if key in part:
+                    types_in_segment.add(key)
+            if types_in_segment:
+                segment_types.append(types_in_segment)
+
+        # If 2+ segments each have item types, and they differ
+        if len(segment_types) >= 2:
+            all_types = set()
+            for st in segment_types:
+                all_types.update(st)
+            # Different segments have different types
+            if len(all_types) >= 2:
+                return True
+
+    return False
+
+
+def _extract_units(title: str, description: str) -> ExtractionResult:
+    """Extract unit information with mixed-procurement awareness.
+
+    Returns ExtractionResult with confidence level and per-item breakdown.
     """
     combined = f"{title} {description}"
 
-    # Pattern 1: digit with parens — "FORTY (40) UNITS OF LAPTOP"
-    pat_paren = re.compile(
-        r'(?:\w+)\s*\((\d[\d,]*)\)\s*(?:UNITS?|pcs?|sets?|units?)\s*(?:OF\s+)?(?:BRAND[- ]?NEW\s+)?(\w[\w\s-]*?)(?:\s+(?:WITH|FOR|IN|,|\.|\s*$))',
-        re.IGNORECASE,
-    )
-    m = pat_paren.search(combined)
-    if m:
-        count = int(m.group(1).replace(',', ''))
-        unit_type = _normalize_unit_type(m.group(2))
-        if count > 0 and unit_type:
-            return count, unit_type
+    # Step 1: Find ALL quantity+item pairs
+    all_pairs = _find_all_quantity_items(combined)
 
-    # Pattern 2: direct digit — "500 UNITS LAPTOP", "3 UNIT LAPTOP", "1 PCS - LAPTOP"
-    pat_digit = re.compile(
-        r'(\d[\d,]*)\s*(?:UNITS?|pcs?|sets?)\s*[-\s]*(?:OF\s+)?(?:BRAND[- ]?NEW\s+)?(\w[\w\s-]*?)(?:\s+(?:WITH|FOR|IN|,|\.|\s*$))',
-        re.IGNORECASE,
-    )
-    m = pat_digit.search(combined)
-    if m:
-        count = int(m.group(1).replace(',', ''))
-        unit_type = _normalize_unit_type(m.group(2))
-        if count > 0 and unit_type:
-            return count, unit_type
+    if not all_pairs:
+        return ExtractionResult()
 
-    # Pattern 3: word number — "FORTY units of laptop" (without parens)
-    pat_word = re.compile(
-        r'\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b\s+(?:UNITS?\s+)?(?:OF\s+)?(\w[\w\s-]*?)(?:\s+(?:WITH|FOR|IN|,|\.|\s*$))',
-        re.IGNORECASE,
-    )
-    m = pat_word.search(combined)
-    if m:
-        count = _word_to_int(m.group(1))
-        unit_type = _normalize_unit_type(m.group(2))
-        if count and count > 0 and unit_type:
-            return count, unit_type
+    # Step 2: Detect mixed procurement
+    mixed = _is_mixed_procurement(title)
 
-    # Pattern 4: line items — "Quantity 30 Unit 2,359,790.00"
-    pat_line = re.compile(
-        r'(\d+)\s+(Unit|Lot|Set|Pack|Piece|pc)\s+[\d,]+(?:\.\d+)?',
-        re.IGNORECASE,
-    )
-    m = pat_line.search(combined)
-    if m:
-        count = int(m.group(1))
-        uom = m.group(2).lower()
-        # Try to extract item type from surrounding context
-        # Look for a known benchmark key in the combined text
-        item_type = ""
-        for key in sorted(BENCHMARKS.keys(), key=len, reverse=True):
-            if key in combined.lower():
-                item_type = key
-                break
-        if count > 0:
-            return count, item_type or uom
+    # If title is clean but combined text has multiple types, still flag
+    if not mixed:
+        item_types = {p[1] for p in all_pairs}
+        if len(item_types) >= 3:
+            # Too many different items in combined text — likely mixed
+            mixed = True
 
-    return None, ""
+    # Step 3: If mixed, try to build per-item breakdown
+    if mixed and len(all_pairs) >= 2:
+        # Group by item type
+        by_type: dict[str, int] = {}
+        for count, item_type in all_pairs:
+            # Deduplicate: only take the first match per type
+            if item_type not in by_type:
+                by_type[item_type] = count
+
+        items = [{"type": t, "count": c} for t, c in by_type.items()]
+
+        # Use the most specific (longest-named) item type as primary
+        primary = max(by_type.keys(), key=len)
+
+        return ExtractionResult(
+            unit_count=by_type[primary],
+            unit_type=primary,
+            confidence="low",
+            is_mixed=True,
+            items=items,
+        )
+
+    # Step 4: Single item — pick the best match
+    # Prefer matches from title over description
+    title_pairs = _find_all_quantity_items(title)
+    if title_pairs:
+        count, item_type = title_pairs[0]
+        return ExtractionResult(
+            unit_count=count,
+            unit_type=item_type,
+            confidence="high",
+            is_mixed=False,
+        )
+
+    # Fall back to first match from combined text
+    count, item_type = all_pairs[0]
+    return ExtractionResult(
+        unit_count=count,
+        unit_type=item_type,
+        confidence="medium",
+        is_mixed=False,
+    )
 
 
 def find_price_anomalies(
@@ -247,30 +397,34 @@ def find_price_anomalies(
         title = notice["title"]
         desc = notice.get("description", "")
 
-        unit_count, unit_type = _extract_unit_count(title, desc)
+        result = _extract_units(title, desc)
 
-        if unit_count and unit_count > 0:
-            unit_price = abc / unit_count
+        # Skip mixed procurements — unit price would be misleading
+        if result.is_mixed or not result.unit_count or result.unit_count <= 0:
+            continue
 
-            # Look up benchmark — skip lot-level procurements
-            benchmark = BENCHMARKS.get(unit_type, 0)
-            if benchmark <= 0:
-                continue
+        unit_price = abc / result.unit_count
 
-            overcharge_pct = ((unit_price - benchmark) / benchmark) * 100
+        # Look up benchmark — skip lot-level procurements
+        benchmark = BENCHMARKS.get(result.unit_type, 0)
+        if benchmark <= 0:
+            continue
 
-            if overcharge_pct > 20:
-                anomalies.append({
-                    "ref_no": notice["ref_no"],
-                    "title": title,
-                    "agency": notice["agency"],
-                    "abc": abc,
-                    "unit_count": unit_count,
-                    "unit_type": unit_type,
-                    "unit_price": unit_price,
-                    "benchmark": benchmark,
-                    "overcharge_pct": overcharge_pct,
-                })
+        overcharge_pct = ((unit_price - benchmark) / benchmark) * 100
+
+        if overcharge_pct > 20:
+            anomalies.append({
+                "ref_no": notice["ref_no"],
+                "title": title,
+                "agency": notice["agency"],
+                "abc": abc,
+                "unit_count": result.unit_count,
+                "unit_type": result.unit_type,
+                "unit_price": unit_price,
+                "benchmark": benchmark,
+                "overcharge_pct": overcharge_pct,
+                "confidence": result.confidence,
+            })
 
     return anomalies
 
@@ -427,24 +581,27 @@ def probe(
     # Heuristic 2: High ABC relative to item type
     for n in notices_with_abc:
         abc = n["abc"]
-        unit_count, unit_type = _extract_unit_count(n["title"], n.get("description", ""))
+        result = _extract_units(n["title"], n.get("description", ""))
 
-        if unit_count and unit_count > 0:
-            unit_price = abc / unit_count
-            # Flag if unit price exceeds benchmark by >30%
-            benchmark = BENCHMARKS.get(unit_type, 0)
-            if benchmark > 0 and unit_price > benchmark * 1.3:
-                findings.append(Finding(
-                    reason_code="HIGH_UNIT_PRICE",
-                    title=f"{unit_type.title()} at ₱{unit_price:,.0f}/unit",
-                    description=f"{n['agency']} budgeting ₱{unit_price:,.0f} per {unit_type} (benchmark ₱{benchmark:,.0f})",
-                    confidence=Confidence.MEDIUM,
-                    evidence=[
-                        f"Ref {n['ref_no']}: {n['title']}",
-                        f"ABC: ₱{abc:,.0f} for {unit_count} {unit_type}(s)",
-                        f"Unit price: ₱{unit_price:,.0f} vs benchmark ₱{benchmark:,.0f}",
-                    ],
-                ))
+        # Skip mixed procurements
+        if result.is_mixed or not result.unit_count or result.unit_count <= 0:
+            continue
+
+        unit_price = abc / result.unit_count
+        # Flag if unit price exceeds benchmark by >30%
+        benchmark = BENCHMARKS.get(result.unit_type, 0)
+        if benchmark > 0 and unit_price > benchmark * 1.3:
+            findings.append(Finding(
+                reason_code="HIGH_UNIT_PRICE",
+                title=f"{result.unit_type.title()} at ₱{unit_price:,.0f}/unit",
+                description=f"{n['agency']} budgeting ₱{unit_price:,.0f} per {result.unit_type} (benchmark ₱{benchmark:,.0f})",
+                confidence=Confidence.MEDIUM,
+                evidence=[
+                    f"Ref {n['ref_no']}: {n['title']}",
+                    f"ABC: ₱{abc:,.0f} for {result.unit_count} {result.unit_type}(s)",
+                    f"Unit price: ₱{unit_price:,.0f} vs benchmark ₱{benchmark:,.0f}",
+                ],
+            ))
 
     # Heuristic 3: Negotiated procurement for large amounts
     for n in notices_with_abc:
