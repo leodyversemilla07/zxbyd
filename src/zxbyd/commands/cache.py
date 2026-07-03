@@ -30,6 +30,7 @@ def stats() -> None:
         notice_count = conn.execute("SELECT COUNT(*) FROM notices").fetchone()[0]
         with_abc = conn.execute("SELECT COUNT(*) FROM notices WHERE abc IS NOT NULL AND abc > 0").fetchone()[0]
         award_count = conn.execute("SELECT COUNT(*) FROM awards").fetchone()[0]
+        release_count = conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0]
         agency_count = conn.execute("SELECT COUNT(DISTINCT agency) FROM notices WHERE agency != ''").fetchone()[0]
 
         # Oldest and newest cached
@@ -45,6 +46,7 @@ def stats() -> None:
     table.add_row("Notices", str(notice_count))
     table.add_row("  with ABC", str(with_abc))
     table.add_row("Awards", str(award_count))
+    table.add_row("OCDS Releases", str(release_count))
     table.add_row("Unique Agencies", str(agency_count))
     table.add_row("Oldest Entry", oldest)
     table.add_row("Newest Entry", newest)
@@ -72,6 +74,7 @@ def clear(
     with connection() as conn:
         conn.execute("DELETE FROM notices")
         conn.execute("DELETE FROM awards")
+        conn.execute("DELETE FROM releases")
         conn.commit()
 
     success("Cache cleared.")
@@ -80,7 +83,7 @@ def clear(
 @cache_app.command()
 def export(
     filepath: str = typer.Argument(help="Output file path (.json)."),
-    table: str = typer.Option("notices", "--table", "-t", help="Table to export (notices/awards/both)."),
+    table: str = typer.Option("notices", "--table", "-t", help="Table to export (notices/awards/releases/both/all)."),
 ) -> None:
     """Export cached data to JSON."""
     from zxbyd.ui import info, success
@@ -96,6 +99,10 @@ def export(
         if table in ("awards", "both"):
             rows = conn.execute("SELECT * FROM awards").fetchall()
             data["awards"] = [dict(r) for r in rows]
+
+        if table in ("releases", "all"):
+            rows = conn.execute("SELECT * FROM releases").fetchall()
+            data["releases"] = [dict(r) for r in rows]
 
     path = Path(filepath)
     path.parent.mkdir(parents=True, exist_ok=True)

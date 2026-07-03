@@ -167,3 +167,82 @@ def show_agency_stats(stats: dict[str, Any], name: str) -> None:
         content.append(f"{val}\n")
 
     console.print(Panel(content, title=f"[cyan]Agency[/cyan] — {name}"))
+
+
+# ── OCDS-aware display ────────────────────────────────────────────
+
+def show_releases(releases: list, query: str = "") -> None:
+    """Display OCDS Release search results as a table.
+
+    Accepts either Release model instances or their dump dicts.
+    """
+    if not releases:
+        info("No releases found.")
+        return
+
+    # Normalize to dicts
+    rows = []
+    for r in releases:
+        if hasattr(r, "model_dump_simple"):
+            rows.append(r.model_dump_simple())
+        elif hasattr(r, "get"):
+            rows.append(r)
+        else:
+            rows.append(r)
+
+    table = Table(
+        title=f'OCDS Releases — "{query}"' if query else "OCDS Releases",
+        show_lines=True,
+    )
+    table.add_column("OCID", style="cyan", no_wrap=True)
+    table.add_column("Ref #", style="dim", no_wrap=True)
+    table.add_column("Title", max_width=45)
+    table.add_column("Agency", max_width=25)
+    table.add_column("ABC", justify="right", style="green")
+    table.add_column("Status", max_width=12)
+
+    for r in rows:
+        abc = r.get("abc")
+        abc_str = f"₱{abc:,.2f}" if abc else "—"
+        ocid = r.get("ocid", "")
+        ref = ocid.split("-")[-1] if "-" in ocid else r.get("ref_no", "—")
+        if not ocid:
+            ref = r.get("ref_no", "—")
+        table.add_row(
+            ocid or "—",
+            ref,
+            (r.get("title", "") or "—")[:45],
+            (r.get("agency", "") or "—")[:25],
+            abc_str,
+            r.get("status", "") or "—",
+        )
+
+    console.print(table)
+    info(f"{len(rows)} release(s)")
+
+
+def show_release_detail(release) -> None:
+    """Display full OCDS Release details."""
+    if hasattr(release, "model_dump_simple"):
+        data = release.model_dump_simple()
+    elif hasattr(release, "get"):
+        data = release
+    else:
+        data = {}
+
+    title = data.get("title", "Untitled")
+    ref = data.get("ref_no", data.get("ocid", "—"))
+
+    content = Text()
+    for key in [
+        "ocid", "agency", "category", "abc", "mode",
+        "area_of_delivery", "published_date", "closing_date",
+        "description", "status", "solicitation_number",
+    ]:
+        val = data.get(key, "—")
+        if key == "abc" and val and val != "—":
+            val = f"₱{val:,.2f}"
+        content.append(f"{key}: ", style="bold")
+        content.append(f"{val}\n")
+
+    console.print(Panel(content, title=f"[cyan]{ref}[/cyan] — {title}"))

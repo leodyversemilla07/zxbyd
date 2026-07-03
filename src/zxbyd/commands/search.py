@@ -121,3 +121,38 @@ def recent(
             upsert_notice(conn, r)
 
     show_notices(results[:limit], "recent")
+
+
+@search_app.command()
+def releases(
+    query: str = typer.Argument(help="Search keywords (e.g., 'laptop', 'server')."),
+    agency: str | None = typer.Option(None, "--agency", "-a", help="Filter by agency name."),
+    limit: int = typer.Option(50, "--limit", "-n", help="Max results."),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
+) -> None:
+    """Search cached OCDS releases by keyword.
+
+    Unlike 'search notices', this returns data in OCDS format
+    with validated structure. Only searches local cache.
+    """
+    import json as json_mod
+
+    from zxbyd.ui import info, show_releases, error
+    from zxbyd.storage import connection, search_releases
+
+    info(f'Searching OCDS releases for "{query}"...')
+    with connection() as conn:
+        results = search_releases(conn, query=query, agency=agency, limit=limit)
+
+    if not results:
+        info(f'No OCDS releases found for "{query}". Run "zxbyd search notices" first to populate cache.')
+        return
+
+    if as_json:
+        dump = [
+            r.model_dump(mode="json", by_alias=True) for r in results
+        ]
+        typer.echo(json_mod.dumps(dump, indent=2, default=str))
+        return
+
+    show_releases(results, query)

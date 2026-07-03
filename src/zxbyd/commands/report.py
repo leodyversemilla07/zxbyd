@@ -21,7 +21,7 @@ def report(
     from zxbyd.ui import info, console
     from zxbyd.data import connection, search_notices, upsert_notice
     from zxbyd.analysis import find_price_anomalies
-    from zxbyd.commands.analysis import _enrich_notices
+    from zxbyd.commands import enrich_notices
 
     with connection() as conn:
         # Step 1: Search
@@ -38,7 +38,7 @@ def report(
 
         # Step 2: Enrich with details
         notices = search_notices(conn, query=query)
-        _enrich_notices(conn, notices, max_fetch=15)
+        enrich_notices(conn, notices, max_fetch=15)
 
         # Re-read after enrichment
         notices = search_notices(conn, query=query)

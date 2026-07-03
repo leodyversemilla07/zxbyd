@@ -168,7 +168,7 @@ def overprice(
 
         # Enrich with details
         notices = search_notices(conn, query=category)
-        _enrich_notices(conn, notices, max_fetch=15)
+        enrich_notices(conn, notices, max_fetch=15)
 
         info(f"Analyzing prices for '{category}'...")
         anomalies = find_price_anomalies(conn, category)
@@ -269,7 +269,7 @@ def split_contracts(
         # Enrich with details
         from zxbyd.data import search_notices
         notices = search_notices(conn, query=agency)
-        _enrich_notices(conn, notices, max_fetch=15)
+        enrich_notices(conn, notices, max_fetch=15)
 
         info(f"Analyzing {agency} for contract splitting...")
         candidates = detect_split_contracts(conn, agency, gap_days)
@@ -308,6 +308,39 @@ def network(
     supplier_name: str = typer.Argument(help="Supplier name to analyze."),
 ) -> None:
     """Analyze a supplier's network — agencies, competitors."""
-    from zxbyd.ui import info
-    info(f"Analyzing network for {supplier_name}...")
-    typer.echo("Network analysis not yet implemented (requires award data).")
+    from rich.table import Table
+    from zxbyd.ui import info, console
+    from zxbyd.data import connection
+    from zxbyd.analysis import network_analysis
+
+    info(f"Analyzing network for '{supplier_name}'...")
+    with connection() as conn:
+        result = network_analysis(conn, supplier_name)
+
+    if not result.get("found"):
+        console.print(f"[dim]Supplier '{supplier_name}' not found in cached awards.[/dim]")
+        return
+
+    console.print(f"\n[bold]Supplier:[/bold] {result['supplier']}")
+    console.print(f"Total awards: {result['total_awards']}")
+    console.print(f"Total amount: ₱{result['total_amount']:,.0f}")
+    console.print(f"Avg award: ₱{result['avg_amount']:,.0f}")
+    console.print(f"Agencies served: {result['agency_count']}")
+
+    if result.get("agencies"):
+        table = Table(title="Agencies Served", show_lines=True)
+        table.add_column("Agency", max_width=40)
+        table.add_column("Awards", justify="center")
+        table.add_column("Total", justify="right", style="green")
+        for a in result["agencies"]:
+            table.add_row(
+                a["agency"][:40],
+                str(a["count"]),
+                f"₱{a['total']:,.0f}" if a.get("total") else "—",
+            )
+        console.print(table)
+
+    if result.get("competitors"):
+        console.print("\n[bold]Competitors (shared agencies):[/bold]")
+        for c in result["competitors"]:
+            console.print(f"  {c['supplier']}: {c['shared_agencies']} shared agency/agencies")

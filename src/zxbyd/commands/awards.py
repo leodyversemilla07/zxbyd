@@ -130,6 +130,7 @@ def import_(
 
     from zxbyd.ui import info, console, success, warn
     from zxbyd.data import connection, upsert_award
+    from zxbyd.storage import upsert_award_release
 
     path = Path(filepath)
     if not path.exists():
@@ -203,10 +204,11 @@ def import_(
         for r in normalized:
             if r["supplier"] and r["ref_no"]:
                 upsert_award(conn, r)
+                upsert_award_release(conn, r)  # Also store as OCDS Award release
                 imported += 1
         conn.commit()
 
-    success(f"Imported {imported} award(s)")
+    success(f"Imported {imported} award(s) as OCDS releases")
 
 
 @awards_app.command()

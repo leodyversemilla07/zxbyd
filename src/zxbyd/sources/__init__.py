@@ -446,3 +446,32 @@ def search_awards(agency: str | None = None) -> list[dict[str, Any]]:
 def list_agencies() -> list[dict[str, str]]:
     """List all procuring entities on PhilGEPS."""
     raise NotImplementedError("Agency listing not yet implemented.")
+
+
+# ── OCDS adapter ───────────────────────────────────────────────────
+
+def to_ocds_release(notice: dict) -> dict:
+    """Convert a PhilGEPS notice dict to an OCDS-compatible release dict.
+
+    Returns a dict that can be passed to Release.from_philgeps_dict()
+    or directly to Release.model_validate().
+    """
+    from zxbyd.models.release import Release
+    release = Release.from_philgeps_dict(notice)
+    return release.model_dump(mode="json", by_alias=True)
+
+
+def search_as_releases(query: str, max_pages: int = 1) -> list[dict]:
+    """Search PhilGEPS and return results as OCDS release dicts."""
+    from zxbyd.models.release import Release
+    results = search(query, max_pages=max_pages)
+    return [Release.from_philgeps_dict(r).model_dump(mode="json", by_alias=True) for r in results]
+
+
+def get_notice_detail_as_release(ref_id: str) -> dict:
+    """Fetch notice detail and return as an OCDS release dict."""
+    from zxbyd.models.release import Release
+    detail = get_notice_detail(ref_id)
+    if "error" in detail:
+        return detail
+    return Release.from_philgeps_dict(detail).model_dump(mode="json", by_alias=True)
