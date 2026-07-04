@@ -1,5 +1,7 @@
 # zxbyd
 
+[![CI](https://github.com/leodyversemilla07/zxbyd/actions/workflows/ci.yml/badge.svg)](https://github.com/leodyversemilla07/zxbyd/actions/workflows/ci.yml)
+
 Probe Philippine government procurement.
 
 Minimal tool. Serious purpose.

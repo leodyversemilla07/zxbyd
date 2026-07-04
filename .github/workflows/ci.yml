@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} / ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      # Use uv for fast, deterministic, lockfile-driven installs
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync dependencies
+        run: uv sync --dev
+        env:
+          # The lexically wrong but practically expected stderr on Windows
+          # is what we are NOT testing here — only the package works.
+          PYTHONIOENCODING: utf-8
+
+      - name: Run tests
+        run: uv run pytest tests/ -v --tb=short
+
+      - name: Smoke test CLI
+        run: |
+          uv run zxbyd --version
+          uv run zxbyd --help
+          uv run zxbyd search --help
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Sync
+        run: uv sync --dev
+      - name: Import check (basic syntax)
+        run: |
+          uv run python -c "import zxbyd; print('zxbyd OK', zxbyd.__version__)"
+          uv run python -c "from zxbyd.main import app; print('app OK')"
+          uv run python -c "from zxbyd.models import Release; print('Release OK')"
+          uv run python -c "from zxbyd.analysis import probe; print('analysis OK')"
