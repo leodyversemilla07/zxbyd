@@ -106,14 +106,14 @@ def agency(
     content.append(f"{stats['notice_count']} ({stats['with_abc']} with ABC)\n")
     content.append(f"Total ABC: ", style="bold")
     total_abc = stats.get("total_abc", 0) or 0
-    content.append(f"₱{total_abc:,.0f}\n")
+    content.append(f"PHP {total_abc:,.0f}\n")
     content.append(f"Avg ABC: ", style="bold")
     avg_abc = stats.get("avg_abc", 0) or 0
-    content.append(f"₱{avg_abc:,.0f}\n")
+    content.append(f"PHP {avg_abc:,.0f}\n")
     content.append(f"ABC Range: ", style="bold")
     min_abc = stats.get("min_abc", 0) or 0
     max_abc = stats.get("max_abc", 0) or 0
-    content.append(f"₱{min_abc:,.0f} — ₱{max_abc:,.0f}\n")
+    content.append(f"PHP {min_abc:,.0f} — PHP {max_abc:,.0f}\n")
     content.append(f"Categories: ", style="bold")
     content.append(f"{stats.get('category_count', 0)}\n")
     content.append(f"Modes Used: ", style="bold")
@@ -132,7 +132,7 @@ def agency(
             table.add_row(
                 m["mode"][:30],
                 str(m["count"]),
-                f"₱{m_abc:,.0f}" if m_abc else "—",
+                f"PHP {m_abc:,.0f}" if m_abc else "—",
             )
         console.print(table)
 
@@ -154,7 +154,7 @@ def agency(
             table.add_row(
                 r["ref_no"],
                 (r["title"] or "—")[:40],
-                f"₱{abc:,.0f}" if abc else "—",
+                f"PHP {abc:,.0f}" if abc else "—",
                 (r.get("mode") or "—")[:15],
             )
         console.print(table)
@@ -170,7 +170,7 @@ def agency(
             table.add_row(
                 (s["supplier"] or "—")[:35],
                 str(s["count"]),
-                f"₱{total:,.0f}" if total else "—",
+                f"PHP {total:,.0f}" if total else "—",
             )
         console.print(table)
 
@@ -249,14 +249,14 @@ def supplier(
     content.append(f"{stats['total_awards']}\n")
     content.append(f"Total Amount: ", style="bold")
     total = stats.get("total_amount", 0) or 0
-    content.append(f"₱{total:,.0f}\n")
+    content.append(f"PHP {total:,.0f}\n")
     content.append(f"Avg Award: ", style="bold")
     avg = stats.get("avg_amount", 0) or 0
-    content.append(f"₱{avg:,.0f}\n")
+    content.append(f"PHP {avg:,.0f}\n")
     content.append(f"Range: ", style="bold")
     min_a = stats.get("min_amount", 0) or 0
     max_a = stats.get("max_amount", 0) or 0
-    content.append(f"₱{min_a:,.0f} — ₱{max_a:,.0f}\n")
+    content.append(f"PHP {min_a:,.0f} — PHP {max_a:,.0f}\n")
     content.append(f"Agencies Served: ", style="bold")
     content.append(f"{stats.get('agency_count', 0)}")
 
@@ -273,7 +273,7 @@ def supplier(
             table.add_row(
                 (a["agency"] or "—")[:35],
                 str(a["count"]),
-                f"₱{a_total:,.0f}" if a_total else "—",
+                f"PHP {a_total:,.0f}" if a_total else "—",
             )
         console.print(table)
 
@@ -291,7 +291,7 @@ def supplier(
                 r.get("ref_no", "—"),
                 (r.get("title") or "—")[:30],
                 (r.get("agency") or "—")[:25],
-                f"₱{amount:,.0f}" if amount else "—",
+                f"PHP {amount:,.0f}" if amount else "—",
                 r.get("award_date") or "—",
             )
         console.print(table)
@@ -350,7 +350,7 @@ def agencies(
             str(i),
             r["agency"][:45],
             str(r["notice_count"]),
-            f"₱{abc:,.0f}" if abc else "—",
+            f"PHP {abc:,.0f}" if abc else "—",
         )
 
     console.print(table)

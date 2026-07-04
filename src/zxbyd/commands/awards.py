@@ -185,7 +185,7 @@ def import_(
         table.add_row(
             r["ref_no"],
             (r["supplier"] or "—")[:30],
-            f"₱{r['amount']:,.0f}" if r["amount"] else "—",
+            f"PHP {r['amount']:,.0f}" if r["amount"] else "—",
             (r["agency"] or "—")[:25],
         )
 
@@ -276,7 +276,7 @@ def status(
                 r["ref_no"],
                 (r["title"] or "—")[:35],
                 (r["agency"] or "—")[:25],
-                f"₱{abc:,.0f}" if abc else "—",
+                f"PHP {abc:,.0f}" if abc else "—",
                 r["status"] or "—",
                 r["closing_date"] or "—",
             )

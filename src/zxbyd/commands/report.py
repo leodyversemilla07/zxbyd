@@ -108,7 +108,7 @@ def report(
     header.append(f"Notices: ", style="bold")
     header.append(f"{total_notices} found, {total_enriched} with ABC data\n")
     header.append(f"Total ABC: ", style="bold")
-    header.append(f"₱{total_abc:,.0f}")
+    header.append(f"PHP {total_abc:,.0f}")
     console.print(Panel(header, border_style="cyan"))
 
     if not anomalies:
@@ -135,10 +135,10 @@ def report(
             a["ref_no"],
             (a["agency"] or "—")[:25],
             (a["title"] or "—")[:35],
-            f"₱{a['abc']:,.0f}",
+            f"PHP {a['abc']:,.0f}",
             str(a["unit_count"]),
-            f"₱{a['unit_price']:,.0f}",
-            f"₱{a['benchmark']:,.0f}",
+            f"PHP {a['unit_price']:,.0f}",
+            f"PHP {a['benchmark']:,.0f}",
             f"+{a['overcharge_pct']:.0f}%",
         )
 
@@ -149,9 +149,9 @@ def report(
     for i, a in enumerate(anomalies[:top], 1):
         console.print(
             f"  [{i}] {a['agency']}: "
-            f"₱{a['abc']:,.0f} for {a['unit_count']} {a['unit_type']}(s) = "
-            f"₱{a['unit_price']:,.0f}/unit "
-            f"(benchmark ₱{a['benchmark']:,.0f}, +{a['overcharge_pct']:.0f}%)"
+            f"PHP {a['abc']:,.0f} for {a['unit_count']} {a['unit_type']}(s) = "
+            f"PHP {a['unit_price']:,.0f}/unit "
+            f"(benchmark PHP {a['benchmark']:,.0f}, +{a['overcharge_pct']:.0f}%)"
         )
         console.print(
             f"      Ref: https://notices.philgeps.gov.ph/GEPSNONPILOT/Tender/"
@@ -163,7 +163,7 @@ def report(
     top_agencies = sorted(agency_abc.items(), key=lambda x: x[1], reverse=True)[:5]
     for ag, abc in top_agencies:
         count = agency_counts.get(ag, 0)
-        console.print(f"  {ag}: ₱{abc:,.0f} ({count} notice(s))")
+        console.print(f"  {ag}: PHP {abc:,.0f} ({count} notice(s))")
 
     # Disclaimer
     console.print(

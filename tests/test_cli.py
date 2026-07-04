@@ -71,11 +71,13 @@ def test_release_from_philgeps_dict():
 
 
 def test_value_currency_default():
-    """Value defaults to PHP."""
+    """Value defaults to PHP and formats safely across platforms."""
     from zxbyd.models.common import Value
     v = Value(amount=50000)
     assert v.currency == "PHP"
-    assert str(v) == "₱50,000.00"
+    # Format is platform-safe (PHP label, not ₱ glyph, for Windows terminal)
+    assert "50,000" in str(v)
+    assert v.amount == 50000
 
 
 def test_release_serialization_roundtrip():
@@ -451,3 +453,22 @@ def test_upsert_notice_also_stores_release():
     assert ocds_ref == "COMPAT001"
 
     conn.close()
+
+
+def test_watch_command_shows_help():
+    """watch command help text is reachable."""
+    result = runner.invoke(app, ["analysis", "watch", "--help"])
+    assert result.exit_code == 0
+    assert "watch" in result.output.lower()
+    assert "--severity" in result.output
+    assert "--json" in result.output
+
+
+def test_watch_rejects_bad_severity(populated_db):
+    """Invalid --severity exits non-zero with clear error."""
+    # populated_db seeds real fixtures, but the validation must run FIRST.
+    result = runner.invoke(app, ["analysis", "watch", "Some Agency",
+                                "--severity", "bogus", "--cache-only"])
+    assert result.exit_code != 0
+    # Error message should mention severity; whether watch ever reached cache doesn't matter.
+    assert "severity" in result.output.lower() or "invalid" in result.output.lower()

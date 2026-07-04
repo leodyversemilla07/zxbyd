@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import sys
 from typing import Any
 
 from rich.console import Console
@@ -9,7 +11,26 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-console = Console()
+
+def _make_console() -> Console:
+    """Build a Console that safely renders Unicode on Windows.
+
+    Rich's legacy Windows renderer writes through the system codepage
+    (cp1252 on PH English Windows), which crashes on \u20b1 (peso) and
+    substitutes glyphs on em-dash (\u2014). We rewrap stdout in UTF-8 with
+    errors='replace' so the underlying terminal can render Unicode and
+    any unsupported bytes degrade gracefully instead of crashing.
+    """
+    try:
+        if hasattr(sys.stdout, "buffer") and not sys.platform.startswith("win") is False:
+            out = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+            return Console(file=out, force_terminal=True, legacy_windows=False)
+    except Exception:
+        pass
+    return Console()
+
+
+console = _make_console()
 
 # Windows terminal cp1252 doesn't have the Peso sign (U+20B1), so use PHP suffix.
 _PESO_SIGN = "PHP"

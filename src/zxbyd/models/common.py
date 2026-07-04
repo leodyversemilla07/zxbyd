@@ -11,7 +11,7 @@ class Value(BaseModel):
     currency: str = "PHP"
 
     def __str__(self) -> str:
-        return f"₱{self.amount:,.2f}"
+        return f"PHP {self.amount:,.2f}"
 
 
 class Period(BaseModel):

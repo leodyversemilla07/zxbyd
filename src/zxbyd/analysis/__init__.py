@@ -80,16 +80,16 @@ def probe(
             reason_code="PRICE_ANOMALY",
             title=f"Overpriced {a['unit_type']}: {a['agency']}",
             description=(
-                f"{a['agency']} budgeting ₱{a['unit_price']:,.0f}/unit for {a['unit_type']}s "
-                f"vs market benchmark ₱{a['benchmark']:,.0f}/unit "
+                f"{a['agency']} budgeting PHP {a['unit_price']:,.0f}/unit for {a['unit_type']}s "
+                f"vs market benchmark PHP {a['benchmark']:,.0f}/unit "
                 f"({a['overcharge_pct']:.0f}% over)"
             ),
             confidence=Confidence.HIGH if a["overcharge_pct"] > 100 else Confidence.MEDIUM,
             evidence=[
                 f"Ref {a['ref_no']}: {a['title']}",
-                f"ABC: ₱{a['abc']:,.0f} for {a['unit_count']} units",
-                f"Unit price: ₱{a['unit_price']:,.0f}",
-                f"Market benchmark: ₱{a['benchmark']:,.0f}",
+                f"ABC: PHP {a['abc']:,.0f} for {a['unit_count']} units",
+                f"Unit price: PHP {a['unit_price']:,.0f}",
+                f"Market benchmark: PHP {a['benchmark']:,.0f}",
             ],
             false_positive_note=(
                 "Could include installation, licensing, or extended warranty. "
@@ -110,13 +110,13 @@ def probe(
         if benchmark > 0 and unit_price > benchmark * 1.3:
             findings.append(Finding(
                 reason_code="HIGH_UNIT_PRICE",
-                title=f"{result.unit_type.title()} at ₱{unit_price:,.0f}/unit",
-                description=f"{n['agency']} budgeting ₱{unit_price:,.0f} per {result.unit_type} (benchmark ₱{benchmark:,.0f})",
+                title=f"{result.unit_type.title()} at PHP {unit_price:,.0f}/unit",
+                description=f"{n['agency']} budgeting PHP {unit_price:,.0f} per {result.unit_type} (benchmark PHP {benchmark:,.0f})",
                 confidence=Confidence.MEDIUM,
                 evidence=[
                     f"Ref {n['ref_no']}: {n['title']}",
-                    f"ABC: ₱{abc:,.0f} for {result.unit_count} {result.unit_type}(s)",
-                    f"Unit price: ₱{unit_price:,.0f} vs benchmark ₱{benchmark:,.0f}",
+                    f"ABC: PHP {abc:,.0f} for {result.unit_count} {result.unit_type}(s)",
+                    f"Unit price: PHP {unit_price:,.0f} vs benchmark PHP {benchmark:,.0f}",
                 ],
             ))
 
@@ -126,16 +126,16 @@ def probe(
         if "negotiated" in mode and n["abc"] and n["abc"] > 500000:
             findings.append(Finding(
                 reason_code="NEGOTIATED_LARGE",
-                title=f"Negotiated procurement at ₱{n['abc']:,.0f}",
+                title=f"Negotiated procurement at PHP {n['abc']:,.0f}",
                 description=(
-                    f"{n['agency']} using negotiated procurement for ₱{n['abc']:,.0f} "
-                    f"contract — competitive bidding required above ₱500K per RA 12009"
+                    f"{n['agency']} using negotiated procurement for PHP {n['abc']:,.0f} "
+                    f"contract — competitive bidding required above PHP 500K per RA 12009"
                 ),
                 confidence=Confidence.LOW,
                 evidence=[
                     f"Ref {n['ref_no']}: {n['title']}",
                     f"Mode: {n.get('mode', 'N/A')}",
-                    f"ABC: ₱{n['abc']:,.0f}",
+                    f"ABC: PHP {n['abc']:,.0f}",
                 ],
                 false_positive_note=(
                     "May be allowed under specific IRR provisions (e.g., Sec. 53). "
@@ -172,6 +172,8 @@ from zxbyd.analysis.heuristics import (
     network_analysis,
     extract_units,
     ExtractionResult,
+    is_mixed_procurement,
+    find_all_quantity_items,
 )
 
 __all__ = [
@@ -179,4 +181,5 @@ __all__ = [
     "find_price_anomalies", "find_repeat_awardees",
     "detect_split_contracts", "network_analysis",
     "extract_units", "ExtractionResult",
+    "is_mixed_procurement", "find_all_quantity_items",
 ]
