@@ -107,17 +107,24 @@ def _extract_viewstate(tree: HTMLParser) -> dict[str, str]:
 def _parse_date(text: str) -> str:
     """Normalize date strings from PhilGEPS.
 
-    Handles formats like:
+    Handles real-world PhilGEPS formats like:
       - 'Jan 15, 2025'
       - 'January 15, 2025 10:00 AM'
+      - 24-hour-with-AM/PM-Q quirk: '21/07/2026 13:00 PM' (PhilGEPS prints 24h+AM/PM)
       - '1/15/2025'
+      - '2026-01-07'
+
     Returns ISO-ish string or original text if parsing fails.
     """
     text = text.strip()
     if not text:
         return ""
 
-    # Try common formats
+    # PhilGEPS quirk: prints 24-hour clocked times with AM/PM suffix, e.g. '13:00 PM'.
+    # Convert to a 12-hour version ("01:00 PM") so the strptime formats work.
+    text = _convert_24h_pm_to_12h(text)
+
+    # Try common formats (most specific first)
     for fmt in (
         "%b %d, %Y %I:%M %p",
         "%B %d, %Y %I:%M %p",
@@ -125,15 +132,49 @@ def _parse_date(text: str) -> str:
         "%B %d, %Y",
         "%m/%d/%Y %I:%M %p",
         "%m/%d/%Y",
+        "%d/%m/%Y %I:%M %p",  # European day-first, common in PH locale
+        "%d/%m/%Y",
         "%Y-%m-%d",
+        "%d %B %Y",
+        "%d %b %Y",
     ):
         try:
             dt = datetime.strptime(text, fmt)
-            return dt.strftime("%Y-%m-%d %H:%M") if "%H" in fmt or "%I" in fmt else dt.strftime("%Y-%m-%d")
+            return dt.strftime("%Y-%m-%d %H:%M") if ("%H" in fmt or "%I" in fmt) else dt.strftime("%Y-%m-%d")
         except ValueError:
             continue
 
     return text
+
+
+def _convert_24h_pm_to_12h(text: str) -> str:
+    """Convert PhilGEPS-style '13:00 PM' or '14:00 PM' to '01:00 PM' / '02:00 PM'.
+
+    Real data shows patterns like '21/07/2026 13:00 PM' which combine 24-hour
+    times with an AM/PM marker. strptime can't parse these directly, so we
+    collapse to 12-hour-clock text that it CAN parse.
+    """
+    m = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b\s*([AaPp][Mm])", text)
+    if not m:
+        return text
+    hh = int(m.group(1))
+    mm = m.group(2)
+    meridiem = m.group(3).upper()
+    # If the hour is in 13-23, the meridiem must be PM; collapse to 12-hour.
+    if 13 <= hh <= 23:
+        hh12 = hh - 12
+        meridiem = "PM"
+    elif hh == 0:
+        hh12 = 12
+        meridiem = "AM"
+    elif hh == 12:
+        hh12 = 12
+        # trust the original meridiem
+    else:
+        # 1-11 — trust the original meridiem
+        hh12 = hh
+    replacement = f"{hh12:02d}:{mm} {meridiem}"
+    return text[: m.start()] + replacement + text[m.end():]
 
 
 def _parse_search_results(html: str) -> tuple[list[dict[str, Any]], int]:

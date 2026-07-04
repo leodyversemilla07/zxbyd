@@ -574,6 +574,46 @@ def watch(
         """, (f"%{agency}%",)).fetchall()
         recent = [dict(r) for r in recent_rows]
 
+        # Step 3.5: Enrich notices missing ABC with detail fetches.
+        # This is critical: most search-page results have abc=None, but
+        # the printable detail page has it for ~95% of notices.
+        enrichable = [
+            r for r in recent
+            if (not r.get("abc")) and r.get("ref_no")
+        ][:10]
+        if enrichable:
+            from zxbyd.sources import get_notice_detail
+            from zxbyd.data import upsert_notice
+
+            for r in enrichable:
+                try:
+                    detail = get_notice_detail(r["ref_no"])
+                    if detail.get("abc"):
+                        detail["ref_no"] = r["ref_no"]
+                        upsert_notice(conn, detail)
+                        r["abc"] = detail["abc"]
+                except Exception:
+                    continue
+            # Re-read notices with updated ABC data
+            fresh = conn.execute(
+                """SELECT ref_no, title, abc, mode, closing_date, status, agency
+                   FROM notices WHERE agency LIKE ?
+                   ORDER BY cached_at DESC LIMIT 15""",
+                (f"%{agency}%",),
+            ).fetchall()
+            recent = [dict(r) for r in fresh]
+            # Refresh stats too
+            fresh_stats = conn.execute(
+                """SELECT
+                       COUNT(*) as notice_count,
+                       SUM(CASE WHEN abc IS NOT NULL AND abc > 0 THEN 1 ELSE 0 END) as with_abc,
+                       SUM(COALESCE(abc, 0)) as total_abc
+                   FROM notices WHERE agency LIKE ?""",
+                (f"%{agency}%",),
+            ).fetchone()
+            if fresh_stats:
+                stats.update(dict(fresh_stats))
+
         # Step 4: Mixed procurements
         mixed_rows = []
         for r in recent:

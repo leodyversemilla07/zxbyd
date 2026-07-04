@@ -1,10 +1,33 @@
 """CLI smoke tests + OCDS model + storage + heuristic tests."""
 
+from pathlib import Path
+
 from typer.testing import CliRunner
 
 from zxbyd.main import app
 
 runner = CliRunner()
+
+
+# Fixture loaders reused below
+_FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def _load_notices() -> list[dict]:
+    import json
+    return json.loads((_FIXTURES_DIR / "notices.json").read_text(encoding="utf-8"))
+
+
+def _load_awards() -> list[dict]:
+    import json
+    return json.loads((_FIXTURES_DIR / "awards.json").read_text(encoding="utf-8"))
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences for stable assertion under different terminal emulators."""
+    import re
+    # Match both common CSI (ESC + [... + ...) and OSC sequences used by Rich
+    return re.sub(r"\x1b\[[0-9;]*[ -/]*[@-~]", "", text).replace("\x1b", "")
 
 
 # ── CLI smoke tests ────────────────────────────────────────────────
@@ -149,6 +172,28 @@ def test_extract_units_no_match():
     result = extract_units("Consultancy Services for IT Assessment", "")
     assert result.unit_count is None
     assert result.unit_type == ""
+
+
+def test_parse_date_philgeps_quirks():
+    """Date parser handles PhilGEPS-specific quirks.
+
+    Real PhilGEPS pages render 24-hour clocks with AM/PM markers like
+    '21/07/2026 13:00 PM'. We normalize these before parsing so the
+    date is stored unambiguously.
+    """
+    from zxbyd.sources import _parse_date
+
+    # 24-hour-with-AM/PM gets normalized to 12-hour-with-meridiem
+    assert _parse_date("21/07/2026 13:00 PM") == "2026-07-21 13:00"
+    assert _parse_date("21/07/2026 14:30 PM") == "2026-07-21 14:30"
+    # Already 12-hour passes through unchanged
+    assert _parse_date("21/07/2026 09:00 AM") == "2026-07-21 09:00"
+    # ISO format
+    assert _parse_date("2026-01-07") == "2026-01-07"
+    # Empty string
+    assert _parse_date("") == ""
+    # Whitespace stripped
+    assert _parse_date(" 2026-01-07 ") == "2026-01-07"
 
 
 def test_is_mixed_procurement():
@@ -377,7 +422,7 @@ def test_detail_show_help():
     """detail show --help contains --ocds flag."""
     result = runner.invoke(app, ["detail", "show", "--help"])
     assert result.exit_code == 0
-    assert "--ocds" in result.output
+    assert "--ocds" in _strip_ansi(result.output)
 
 
 def test_benchmark_lookup():
@@ -459,9 +504,10 @@ def test_watch_command_shows_help():
     """watch command help text is reachable."""
     result = runner.invoke(app, ["analysis", "watch", "--help"])
     assert result.exit_code == 0
-    assert "watch" in result.output.lower()
-    assert "--severity" in result.output
-    assert "--json" in result.output
+    out = _strip_ansi(result.output).lower()
+    assert "watch" in out
+    assert "--severity" in out
+    assert "--json" in out
 
 
 def test_watch_rejects_bad_severity(populated_db):
@@ -474,24 +520,48 @@ def test_watch_rejects_bad_severity(populated_db):
     assert "severity" in result.output.lower() or "invalid" in result.output.lower()
 
 
-def test_watch_markdown_output(populated_db, tmp_path):
+def test_watch_markdown_output(tmp_path, monkeypatch):
     """--markdown -o writes a usable Markdown file."""
+    # Set up an isolated cache dir with fixtures so the CLI test is
+    # deterministic — independent of ``~/.zxbyd`` global state.
+    monkeypatch.setenv("BIDX_CACHE_DIR", str(tmp_path))
+
+    # Seed fixtures directly into the cache
+    from zxbyd.storage import connection, upsert_notice
+
+    with connection() as conn:
+        for n in _load_notices():
+            upsert_notice(conn, n)
+        for a in _load_awards():
+            conn.execute(
+                """INSERT OR IGNORE INTO awards
+                   (ref_no, title, agency, supplier, amount, award_date, mode)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    a.get("ref_no", ""),
+                    a.get("title", ""),
+                    a.get("agency", ""),
+                    a.get("supplier", ""),
+                    a.get("amount", 0),
+                    a.get("award_date", ""),
+                    a.get("mode", ""),
+                ),
+            )
+
     out = tmp_path / "report.md"
     result = runner.invoke(app, [
         "analysis", "watch", "Department of Education",
         "--cache-only", "--markdown",
         "--severity", "low", "-o", str(out),
     ])
-    assert result.exit_code == 0
+    assert result.exit_code == 0, _strip_ansi(result.output)
     assert out.exists()
     content = out.read_text(encoding="utf-8")
-    # Markdown structure markers
     assert content.startswith("# Oversight Report")
     assert "## At-a-Glance" in content
     assert "## Price Anomalies" in content
     assert "## Recent Notices" in content
     assert "## Methodology" in content
-    # No corruption
     assert "�" not in content
     assert "PHP" in content
 
@@ -500,10 +570,11 @@ def test_compare_help_lists_options():
     """compare command surfaces key options."""
     result = runner.invoke(app, ["analysis", "compare", "--help"])
     assert result.exit_code == 0
-    assert "--markdown" in result.output
-    assert "--json" in result.output
-    assert "--top" in result.output
-    assert "--cache-only" in result.output
+    out = _strip_ansi(result.output)
+    assert "--markdown" in out
+    assert "--json" in out
+    assert "--top" in out
+    assert "--cache-only" in out
 
 
 def test_compare_rejects_single_agency():
@@ -522,25 +593,45 @@ def test_compare_rejects_too_many_agencies():
     assert result.exit_code != 0
 
 
-def test_compare_markdown_output(populated_db, tmp_path):
+def test_compare_markdown_output(tmp_path, monkeypatch):
     """--markdown writes a comparison report with overlap section."""
+    # Same isolated cache approach as test_watch_markdown_output
+    monkeypatch.setenv("BIDX_CACHE_DIR", str(tmp_path))
+
+    from zxbyd.storage import connection, upsert_notice
+
+    with connection() as conn:
+        for n in _load_notices():
+            upsert_notice(conn, n)
+        for a in _load_awards():
+            conn.execute(
+                """INSERT OR IGNORE INTO awards
+                   (ref_no, title, agency, supplier, amount, award_date, mode)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    a.get("ref_no", ""),
+                    a.get("title", ""),
+                    a.get("agency", ""),
+                    a.get("supplier", ""),
+                    a.get("amount", 0),
+                    a.get("award_date", ""),
+                    a.get("mode", ""),
+                ),
+            )
+
     out = tmp_path / "compare.md"
     result = runner.invoke(app, [
         "analysis", "compare",
         "PHILIPPINE NATIONAL POLICE", "BUREAU OF INTERNAL REVENUE",
         "--cache-only", "--markdown", "-o", str(out),
     ])
-    assert result.exit_code == 0
+    assert result.exit_code == 0, _strip_ansi(result.output)
     assert out.exists()
     content = out.read_text(encoding="utf-8")
-    # Sections present
     assert "# Procurement Comparison" in content
     assert "## At-a-Glance" in content
     assert "## Top Suppliers per Agency" in content
-    # Cross-agency overlap is the unique value of this command
-    assert "Cross-Agency Supplier Overlap" in content or "Cross-agency" in content.lower()
+    assert "Cross-Agency Supplier Overlap" in content or "cross-agency" in content.lower()
     assert "## Methodology" in content
-    # UTF-8 clean
     assert "�" not in content
-    # At least one ACME mentioned (fixture supplier)
     assert "ACME" in content
