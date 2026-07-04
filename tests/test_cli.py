@@ -472,3 +472,25 @@ def test_watch_rejects_bad_severity(populated_db):
     assert result.exit_code != 0
     # Error message should mention severity; whether watch ever reached cache doesn't matter.
     assert "severity" in result.output.lower() or "invalid" in result.output.lower()
+
+
+def test_watch_markdown_output(populated_db, tmp_path):
+    """--markdown -o writes a usable Markdown file."""
+    out = tmp_path / "report.md"
+    result = runner.invoke(app, [
+        "analysis", "watch", "Department of Education",
+        "--cache-only", "--markdown",
+        "--severity", "low", "-o", str(out),
+    ])
+    assert result.exit_code == 0
+    assert out.exists()
+    content = out.read_text(encoding="utf-8")
+    # Markdown structure markers
+    assert content.startswith("# Oversight Report")
+    assert "## At-a-Glance" in content
+    assert "## Price Anomalies" in content
+    assert "## Recent Notices" in content
+    assert "## Methodology" in content
+    # No corruption
+    assert "�" not in content
+    assert "PHP" in content
