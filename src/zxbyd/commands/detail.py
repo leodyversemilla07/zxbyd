@@ -23,7 +23,7 @@ def show(
     import json as json_mod
 
     from zxbyd.ui import info, show_notice_detail, show_release_detail, error
-    from zxbyd.data import connection, upsert_notice
+    from zxbyd.data import connection, upsert_notice, upsert_release
     from zxbyd.storage import search_releases
     from zxbyd.models.release import Release
 
@@ -71,6 +71,30 @@ def show(
 
     # Fetch from PhilGEPS
     info(f"Fetching details for {ref_id}...")
+    if ocds or as_json:
+        # Use OCDS-native fetch for JSON or OCDS display
+        from zxbyd.sources import get_notice_detail_ocds
+        release = get_notice_detail_ocds(ref_id)
+        if release is None:
+            error(f"Failed to fetch details for {ref_id}")
+            raise typer.Exit(1)
+
+        # Cache as OCDS release
+        with connection() as conn:
+            upsert_release(conn, release)
+
+        if as_json:
+            typer.echo(json_mod.dumps(
+                release.model_dump(mode="json", by_alias=True),
+                indent=2, default=str,
+            ))
+            return
+
+        show_release_detail(release)
+        info(f"OCDS release: {release.ocid}")
+        return
+
+    # Legacy plain-text fetch for non-OCDS
     try:
         from zxbyd.sources import get_notice_detail
         detail_data = get_notice_detail(ref_id)
@@ -85,22 +109,5 @@ def show(
     # Cache
     with connection() as conn:
         upsert_notice(conn, detail_data)
-
-    if as_json:
-        if ocds:
-            release = Release.from_philgeps_dict(detail_data)
-            typer.echo(json_mod.dumps(
-                release.model_dump(mode="json", by_alias=True),
-                indent=2, default=str,
-            ))
-        else:
-            typer.echo(json_mod.dumps(detail_data, indent=2, default=str))
-        return
-
-    if ocds:
-        release = Release.from_philgeps_dict(detail_data)
-        show_release_detail(release)
-        info(f"OCDS release: {release.ocid}")
-        return
 
     show_notice_detail(detail_data)

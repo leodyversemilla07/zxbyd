@@ -110,3 +110,66 @@ def export(
 
     total = sum(len(v) for v in data.values())
     success(f"Exported {total} record(s) to {path}")
+
+
+@cache_app.command()
+def seed(
+    filepath: str = typer.Argument(
+        "tests/fixtures/notices.json",
+        help="Path to JSON fixture file (notices or awards JSON).",
+    ),
+    as_awards: bool = typer.Option(False, "--awards", "-a", help="Import as awards data."),
+) -> None:
+    """Seed cache from a JSON fixture file.
+
+    Loads test fixture data from a JSON file into the local cache.
+    Useful for offline testing without hitting PhilGEPS.
+
+    Example:
+        zxbyd cache seed tests/fixtures/notices.json
+        zxbyd cache seed tests/fixtures/awards.json --awards
+    """
+    from zxbyd.ui import info, success, error
+    from zxbyd.data import connection, upsert_notice, upsert_award
+    from zxbyd.storage import upsert_award_release
+    from zxbyd.models.release import Release
+
+    path = Path(filepath)
+    if not path.exists():
+        error(f"File not found: {filepath}")
+        raise typer.Exit(1)
+
+    raw = json_mod.loads(path.read_text(encoding="utf-8"))
+    records = raw if isinstance(raw, list) else []
+
+    if not records:
+        error("No records found in fixture file")
+        raise typer.Exit(1)
+
+    info(f"Loading {len(records)} record(s) from {path}...")
+
+    with connection() as conn:
+        if as_awards:
+            imported = 0
+            for r in records:
+                upsert_award(conn, r)
+                upsert_award_release(conn, r)
+                imported += 1
+            conn.commit()
+            success(f"Seeded {imported} award(s)")
+        else:
+            imported = 0
+            release_count = 0
+            for r in records:
+                upsert_notice(conn, r)
+                imported += 1
+                # Also store as OCDS release
+                try:
+                    release = Release.from_philgeps_dict(r)
+                    from zxbyd.storage import upsert_release
+                    upsert_release(conn, release)
+                    release_count += 1
+                except Exception:
+                    pass
+            conn.commit()
+            success(f"Seeded {imported} notice(s), {release_count} OCDS release(s)")

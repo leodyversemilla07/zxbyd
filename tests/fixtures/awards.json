@@ -1,0 +1,56 @@
+[
+  {
+    "ref_no": "FIXTURE003",
+    "title": "Supply of Server Rack and Network Equipment for BIR Data Center",
+    "agency": "Bureau of Internal Revenue",
+    "supplier": "ACME CORPORATION",
+    "amount": 12500000.0,
+    "award_date": "2025-06-30",
+    "mode": "Public Bidding"
+  },
+  {
+    "ref_no": "FIXTURE005",
+    "title": "FOR SALE: 5,000 Units Laptop / Desktop Computers (Surplus)",
+    "agency": "Department of Budget and Management",
+    "supplier": "TECHNOHUB TRADING",
+    "amount": 14200000.0,
+    "award_date": "2025-05-15",
+    "mode": "Negotiated"
+  },
+  {
+    "ref_no": "FIXTURE011",
+    "title": "TWELVE (12) UNITS OF VEHICLE FOR PHILIPPINE NATIONAL POLICE",
+    "agency": "Philippine National Police",
+    "supplier": "ACME CORPORATION",
+    "amount": 23800000.0,
+    "award_date": "2025-05-30",
+    "mode": "Public Bidding"
+  },
+  {
+    "ref_no": "FIXTURE015",
+    "title": "FORTY (40) UNITS OF LAPTOP WITH SOFTWARE LICENSES",
+    "agency": "Department of Justice",
+    "supplier": "DATASYS SOLUTIONS",
+    "amount": 2480000.0,
+    "award_date": "2025-06-01",
+    "mode": "Small Value Procurement"
+  },
+  {
+    "ref_no": "FIXTURE001",
+    "title": "Supply and Delivery of Fifty (50) Units Laptop for DepEd Division Offices",
+    "agency": "Department of Education",
+    "supplier": "DATASYS SOLUTIONS",
+    "amount": 2900000.0,
+    "award_date": "2025-08-01",
+    "mode": "Public Bidding"
+  },
+  {
+    "ref_no": "FIXTURE002",
+    "title": "Procurement of Desktop Computers for DICT Regional Offices",
+    "agency": "Department of Information and Communications Technology",
+    "supplier": "ACME CORPORATION",
+    "amount": 5100000.0,
+    "award_date": "2025-08-15",
+    "mode": "Public Bidding"
+  }
+]

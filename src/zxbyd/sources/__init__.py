@@ -448,13 +448,74 @@ def list_agencies() -> list[dict[str, str]]:
     raise NotImplementedError("Agency listing not yet implemented.")
 
 
-# ── OCDS adapter ───────────────────────────────────────────────────
+# ── OCDS-native API (new) ──────────────────────────────────────────
+
+def search_ocds(query: str, max_pages: int = 1) -> list[Release]:
+    """Search PhilGEPS and return results as OCDS Release objects.
+
+    This is the primary OCDS-aware search function.
+    Each result is a validated Release object ready for storage or analysis.
+
+    Args:
+        query: Search keywords.
+        max_pages: Number of result pages to scrape (20 results/page).
+
+    Returns:
+        List of ``Release`` objects, or empty list on failure.
+
+    Example:
+        >>> from zxbyd.sources import search_ocds
+        >>> releases = search_ocds("laptop", max_pages=2)
+        >>> for r in releases:
+        ...     print(r.ocid, r.tender.title)
+    """
+    from zxbyd.models.release import Release
+    results = search(query, max_pages=max_pages)
+    releases = []
+    for r in results:
+        try:
+            releases.append(Release.from_philgeps_dict(r))
+        except Exception as exc:
+            logger.warning(f"Failed to convert notice {r.get('ref_no', '?')}: {exc}")
+    return releases
+
+
+def get_notice_detail_ocds(ref_id: str) -> Release | None:
+    """Fetch full notice detail and return as an OCDS Release object.
+
+    This is the primary OCDS-aware detail fetcher.
+    Returns a validated Release, or None if the fetch failed.
+
+    Args:
+        ref_id: PhilGEPS reference number.
+
+    Returns:
+        ``Release`` object, or ``None`` on error.
+
+    Example:
+        >>> from zxbyd.sources import get_notice_detail_ocds
+        >>> release = get_notice_detail_ocds("12905086")
+        >>> if release:
+        ...     print(release.ocid, release.tender.title)
+    """
+    from zxbyd.models.release import Release
+    detail = get_notice_detail(ref_id)
+    if "error" in detail:
+        logger.error(f"Failed to fetch detail for {ref_id}: {detail['error']}")
+        return None
+    try:
+        return Release.from_philgeps_dict(detail)
+    except Exception as exc:
+        logger.error(f"Failed to convert notice {ref_id} to OCDS: {exc}")
+        return None
+
+
+# ── Legacy OCDS adapters (deprecated) ─────────────────────────────
 
 def to_ocds_release(notice: dict) -> dict:
     """Convert a PhilGEPS notice dict to an OCDS-compatible release dict.
 
-    Returns a dict that can be passed to Release.from_philgeps_dict()
-    or directly to Release.model_validate().
+    Deprecated: Use ``Release.from_philgeps_dict()`` directly instead.
     """
     from zxbyd.models.release import Release
     release = Release.from_philgeps_dict(notice)
@@ -462,14 +523,20 @@ def to_ocds_release(notice: dict) -> dict:
 
 
 def search_as_releases(query: str, max_pages: int = 1) -> list[dict]:
-    """Search PhilGEPS and return results as OCDS release dicts."""
+    """Search PhilGEPS and return results as OCDS release dicts.
+
+    Deprecated: Use ``search_ocds()`` instead.
+    """
     from zxbyd.models.release import Release
     results = search(query, max_pages=max_pages)
     return [Release.from_philgeps_dict(r).model_dump(mode="json", by_alias=True) for r in results]
 
 
 def get_notice_detail_as_release(ref_id: str) -> dict:
-    """Fetch notice detail and return as an OCDS release dict."""
+    """Fetch notice detail and return as an OCDS release dict.
+
+    Deprecated: Use ``get_notice_detail_ocds()`` instead.
+    """
     from zxbyd.models.release import Release
     detail = get_notice_detail(ref_id)
     if "error" in detail:

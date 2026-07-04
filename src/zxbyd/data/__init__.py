@@ -32,4 +32,5 @@ __all__ = [
     "get_db_path",
     "upsert_release",
     "search_releases",
+    "upsert_award_release",
 ]

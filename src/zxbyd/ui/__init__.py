@@ -11,6 +11,16 @@ from rich.text import Text
 
 console = Console()
 
+# Windows terminal cp1252 doesn't have the Peso sign (U+20B1), so use PHP suffix.
+_PESO_SIGN = "PHP"
+
+
+def _fmt_php(amount: float | int | None) -> str:
+    """Format an amount with PHP currency label, safe for Windows terminal."""
+    if amount is None:
+        return "—"
+    return f"{_PESO_SIGN} {amount:,.0f}"
+
 
 def info(msg: str) -> None:
     """Print an info message."""
@@ -51,7 +61,7 @@ def show_notices(notices: list[dict[str, Any]], query: str = "") -> None:
 
     for n in notices:
         abc = n.get("abc")
-        abc_str = f"₱{abc:,.2f}" if abc else "—"
+        abc_str = _fmt_php(abc)
         table.add_row(
             n.get("ref_no", "—"),
             n.get("title", "—"),
@@ -78,7 +88,7 @@ def show_notice_detail(notice: dict[str, Any]) -> None:
     ]:
         val = notice.get(key, "—")
         if key == "abc" and val and val != "—":
-            val = f"₱{val:,.2f}"
+            val = _fmt_php(val)
         content.append(f"{key}: ", style="bold")
         content.append(f"{val}\n")
 
@@ -111,7 +121,7 @@ def show_awards(
 
     for a in awards:
         amount = a.get("amount")
-        amt_str = f"₱{amount:,.2f}" if amount else "—"
+        amt_str = _fmt_php(amount)
         table.add_row(
             a.get("ref_no", "—"),
             a.get("title", "—"),
@@ -140,7 +150,7 @@ def show_supplier_stats(stats: dict[str, Any], name: str) -> None:
     ]:
         val = stats.get(key, "—")
         if "amount" in key and val and val != "—":
-            val = f"₱{val:,.2f}"
+            val = _fmt_php(val)
         content.append(f"{label}: ", style="bold")
         content.append(f"{val}\n")
 
@@ -162,7 +172,7 @@ def show_agency_stats(stats: dict[str, Any], name: str) -> None:
     ]:
         val = stats.get(key, "—")
         if "amount" in key and val and val != "—":
-            val = f"₱{val:,.2f}"
+            val = _fmt_php(val)
         content.append(f"{label}: ", style="bold")
         content.append(f"{val}\n")
 
@@ -203,7 +213,7 @@ def show_releases(releases: list, query: str = "") -> None:
 
     for r in rows:
         abc = r.get("abc")
-        abc_str = f"₱{abc:,.2f}" if abc else "—"
+        abc_str = _fmt_php(abc)
         ocid = r.get("ocid", "")
         ref = ocid.split("-")[-1] if "-" in ocid else r.get("ref_no", "—")
         if not ocid:
@@ -241,7 +251,7 @@ def show_release_detail(release) -> None:
     ]:
         val = data.get(key, "—")
         if key == "abc" and val and val != "—":
-            val = f"₱{val:,.2f}"
+            val = _fmt_php(val)
         content.append(f"{key}: ", style="bold")
         content.append(f"{val}\n")
 
