@@ -494,3 +494,53 @@ def test_watch_markdown_output(populated_db, tmp_path):
     # No corruption
     assert "�" not in content
     assert "PHP" in content
+
+
+def test_compare_help_lists_options():
+    """compare command surfaces key options."""
+    result = runner.invoke(app, ["analysis", "compare", "--help"])
+    assert result.exit_code == 0
+    assert "--markdown" in result.output
+    assert "--json" in result.output
+    assert "--top" in result.output
+    assert "--cache-only" in result.output
+
+
+def test_compare_rejects_single_agency():
+    """Only 1 agency should fail (need >= 2)."""
+    result = runner.invoke(app, ["analysis", "compare", "DICT",
+                                "--cache-only"])
+    assert result.exit_code != 0
+    assert "2-10" in result.output or "agency" in result.output.lower()
+
+
+def test_compare_rejects_too_many_agencies():
+    """11+ agencies should fail."""
+    result = runner.invoke(app, ["analysis", "compare",
+                                *(["AGENCY"] * 11),
+                                "--cache-only"])
+    assert result.exit_code != 0
+
+
+def test_compare_markdown_output(populated_db, tmp_path):
+    """--markdown writes a comparison report with overlap section."""
+    out = tmp_path / "compare.md"
+    result = runner.invoke(app, [
+        "analysis", "compare",
+        "PHILIPPINE NATIONAL POLICE", "BUREAU OF INTERNAL REVENUE",
+        "--cache-only", "--markdown", "-o", str(out),
+    ])
+    assert result.exit_code == 0
+    assert out.exists()
+    content = out.read_text(encoding="utf-8")
+    # Sections present
+    assert "# Procurement Comparison" in content
+    assert "## At-a-Glance" in content
+    assert "## Top Suppliers per Agency" in content
+    # Cross-agency overlap is the unique value of this command
+    assert "Cross-Agency Supplier Overlap" in content or "Cross-agency" in content.lower()
+    assert "## Methodology" in content
+    # UTF-8 clean
+    assert "�" not in content
+    # At least one ACME mentioned (fixture supplier)
+    assert "ACME" in content
