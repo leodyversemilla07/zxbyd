@@ -11,10 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from zxbyd.models.enums import Confidence
-from zxbyd.models.release import Release
-from zxbyd.analysis.benchmarks import lookup_benchmark
 from zxbyd.analysis.heuristics import (
-    extract_units,
     find_price_anomalies,
     find_repeat_awardees,
     detect_split_contracts,
@@ -55,6 +52,10 @@ def probe(
     Searches notices for the query, then runs multiple heuristics
     to detect anomalies.
     """
+    if min_confidence not in {"low", "medium", "high"}:
+        raise ValueError("min_confidence must be low, medium, or high")
+    if max_findings < 0:
+        raise ValueError("max_findings must be non-negative")
     from zxbyd.data import search_notices
 
     notices = search_notices(conn, query=query)
@@ -81,74 +82,28 @@ def probe(
             title=f"Overpriced {a['unit_type']}: {a['agency']}",
             description=(
                 f"{a['agency']} budgeting PHP {a['unit_price']:,.0f}/unit for {a['unit_type']}s "
-                f"vs market benchmark PHP {a['benchmark']:,.0f}/unit "
+                f"vs zxbyd reference PHP {a['benchmark']:,.0f}/unit "
                 f"({a['overcharge_pct']:.0f}% over)"
             ),
-            confidence=Confidence.HIGH if a["overcharge_pct"] > 100 else Confidence.MEDIUM,
+            confidence=Confidence.LOW,
             evidence=[
                 f"Ref {a['ref_no']}: {a['title']}",
                 f"ABC: PHP {a['abc']:,.0f} for {a['unit_count']} units",
                 f"Unit price: PHP {a['unit_price']:,.0f}",
-                f"Market benchmark: PHP {a['benchmark']:,.0f}",
+                f"zxbyd reference: PHP {a['benchmark']:,.0f}",
             ],
             false_positive_note=(
-                "Could include installation, licensing, or extended warranty. "
-                "Check attached specs for justification."
+                "The zxbyd reference value is an unverified heuristic, not a sourced market price. "
+                "ABC may include installation, licensing, warranty, or other items; check the specifications."
             ),
         ))
-
-    # Heuristic 2: High ABC relative to item type
-    for n in notices_with_abc:
-        abc = n["abc"]
-        result = extract_units(n["title"], n.get("description", ""))
-
-        if result.is_mixed or not result.unit_count or result.unit_count <= 0:
-            continue
-
-        unit_price = abc / result.unit_count
-        benchmark = lookup_benchmark(result.unit_type)
-        if benchmark > 0 and unit_price > benchmark * 1.3:
-            findings.append(Finding(
-                reason_code="HIGH_UNIT_PRICE",
-                title=f"{result.unit_type.title()} at PHP {unit_price:,.0f}/unit",
-                description=f"{n['agency']} budgeting PHP {unit_price:,.0f} per {result.unit_type} (benchmark PHP {benchmark:,.0f})",
-                confidence=Confidence.MEDIUM,
-                evidence=[
-                    f"Ref {n['ref_no']}: {n['title']}",
-                    f"ABC: PHP {abc:,.0f} for {result.unit_count} {result.unit_type}(s)",
-                    f"Unit price: PHP {unit_price:,.0f} vs benchmark PHP {benchmark:,.0f}",
-                ],
-            ))
-
-    # Heuristic 3: Negotiated procurement for large amounts
-    for n in notices_with_abc:
-        mode = n.get("mode", "").lower()
-        if "negotiated" in mode and n["abc"] and n["abc"] > 500000:
-            findings.append(Finding(
-                reason_code="NEGOTIATED_LARGE",
-                title=f"Negotiated procurement at PHP {n['abc']:,.0f}",
-                description=(
-                    f"{n['agency']} using negotiated procurement for PHP {n['abc']:,.0f} "
-                    f"contract — competitive bidding required above PHP 500K per RA 12009"
-                ),
-                confidence=Confidence.LOW,
-                evidence=[
-                    f"Ref {n['ref_no']}: {n['title']}",
-                    f"Mode: {n.get('mode', 'N/A')}",
-                    f"ABC: PHP {n['abc']:,.0f}",
-                ],
-                false_positive_note=(
-                    "May be allowed under specific IRR provisions (e.g., Sec. 53). "
-                    "Check solicitation number for the specific exception used."
-                ),
-            ))
 
     # Sort by confidence
     conf_order = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda f: conf_order.get(f.confidence.value, 3))
 
     # Filter by min confidence
-    min_conf = conf_order.get(min_confidence, 2)
+    min_conf = conf_order[min_confidence]
     findings = [f for f in findings if conf_order.get(f.confidence.value, 3) <= min_conf]
 
     summary = (

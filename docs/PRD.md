@@ -124,6 +124,8 @@ zxbyd/
 |----------|---------|---------|
 | `BIDX_CACHE_DIR` | SQLite cache directory | `~/.zxbyd/` |
 
+Implementation note: `ZXBYD_CACHE_DIR` is the preferred variable; `BIDX_CACHE_DIR` remains a compatibility alias.
+
 ## 10. Non-Goals
 
 - Not a legal adjudication engine

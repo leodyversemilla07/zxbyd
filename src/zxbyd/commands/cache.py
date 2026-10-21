@@ -89,14 +89,18 @@ def export(
     from zxbyd.ui import info, success
     from zxbyd.data import connection
 
+    if table not in {"notices", "awards", "releases", "both", "all"}:
+        info("Choose one of: notices, awards, releases, both, all.")
+        raise typer.Exit(2)
+
     with connection() as conn:
         data = {}
 
-        if table in ("notices", "both"):
+        if table in ("notices", "both", "all"):
             rows = conn.execute("SELECT * FROM notices").fetchall()
             data["notices"] = [dict(r) for r in rows]
 
-        if table in ("awards", "both"):
+        if table in ("awards", "both", "all"):
             rows = conn.execute("SELECT * FROM awards").fetchall()
             data["awards"] = [dict(r) for r in rows]
 

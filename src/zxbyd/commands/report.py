@@ -67,6 +67,7 @@ def report(
         output = {
             "query": query,
             "generated_at": datetime.now().isoformat(),
+            "price_reference_note": "zxbyd reference values are unverified heuristics, not sourced market prices",
             "stats": {
                 "total_notices": total_notices,
                 "enriched_with_abc": total_enriched,
@@ -109,6 +110,7 @@ def report(
     header.append(f"{total_notices} found, {total_enriched} with ABC data\n")
     header.append(f"Total ABC: ", style="bold")
     header.append(f"PHP {total_abc:,.0f}")
+    header.append("\nPrice references are unverified heuristics; compare equivalent specifications and scope.", style="yellow")
     console.print(Panel(header, border_style="cyan"))
 
     if not anomalies:
@@ -126,7 +128,7 @@ def report(
     table.add_column("ABC", justify="right", style="green")
     table.add_column("Units", justify="center")
     table.add_column("Unit Price", justify="right", style="red")
-    table.add_column("Benchmark", justify="right")
+    table.add_column("zxbyd Reference", justify="right")
     table.add_column("Over", justify="right", style="bold red")
 
     for i, a in enumerate(anomalies[:top], 1):
@@ -151,7 +153,7 @@ def report(
             f"  [{i}] {a['agency']}: "
             f"PHP {a['abc']:,.0f} for {a['unit_count']} {a['unit_type']}(s) = "
             f"PHP {a['unit_price']:,.0f}/unit "
-            f"(benchmark PHP {a['benchmark']:,.0f}, +{a['overcharge_pct']:.0f}%)"
+            f"(zxbyd reference PHP {a['benchmark']:,.0f}, +{a['overcharge_pct']:.0f}%)"
         )
         console.print(
             f"      Ref: https://notices.philgeps.gov.ph/GEPSNONPILOT/Tender/"

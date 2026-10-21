@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,8 +22,8 @@ from zxbyd.storage.schema import SCHEMA_SQL, run_migrations
 
 
 def get_cache_dir() -> Path:
-    """Get cache directory, respecting BIDX_CACHE_DIR env var."""
-    if env := os.environ.get("BIDX_CACHE_DIR"):
+    """Get cache directory, respecting ZXBYD_CACHE_DIR and legacy BIDX_CACHE_DIR."""
+    if env := os.environ.get("ZXBYD_CACHE_DIR") or os.environ.get("BIDX_CACHE_DIR"):
         return Path(env)
     return Path.home() / ".zxbyd"
 
@@ -68,7 +69,8 @@ def upsert_release(conn: sqlite3.Connection, release: Release | dict) -> None:
     if isinstance(release, Release):
         release_dict = release.model_dump(mode="json", by_alias=True)
         ocid = release.ocid
-        ref_no = release.id
+        release_id = release.id
+        ref_no = release.ocid.rsplit("-", 1)[-1] if release.ocid else release.id
         agency = release.agency_name
         category = (
             release.tender.main_procurement_category
@@ -96,6 +98,7 @@ def upsert_release(conn: sqlite3.Connection, release: Release | dict) -> None:
         release_dict = release
         ref_no = release.get("ref_no", "") or release.get("id", "")
         ocid = release.get("ocid", "") or f"ocds-zxbyd-{ref_no}" if ref_no else ""
+        release_id = release.get("id", "") or ref_no
         agency = release.get("agency", "")
         category = release.get("category", "")
         abc = release.get("abc")
@@ -105,10 +108,11 @@ def upsert_release(conn: sqlite3.Connection, release: Release | dict) -> None:
         closing_date = release.get("closing_date", "")
 
     conn.execute("""
-        INSERT INTO releases (ocid, ref_no, release_json, agency, category, abc,
+        INSERT INTO releases (release_id, ocid, ref_no, release_json, agency, category, abc,
                               mode, status, published_date, closing_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(ocid) DO UPDATE SET
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(ocid, release_id) DO UPDATE SET
+            ref_no=excluded.ref_no,
             release_json=excluded.release_json,
             agency=excluded.agency,
             category=excluded.category,
@@ -119,7 +123,7 @@ def upsert_release(conn: sqlite3.Connection, release: Release | dict) -> None:
             closing_date=excluded.closing_date,
             cached_at=datetime('now')
     """, (
-        ocid, ref_no,
+        release_id, ocid, ref_no,
         json.dumps(release_dict, default=str, ensure_ascii=False),
         agency, category, abc, mode, status, published_date, closing_date,
     ))
@@ -169,28 +173,7 @@ def upsert_notice(conn: sqlite3.Connection, notice: dict[str, Any]) -> None:
 
     Also stores an OCDS release alongside for forward compatibility.
     """
-    conn.execute("""
-        INSERT INTO notices (ref_no, title, agency, category, abc, mode,
-                           area_of_delivery, published_date, closing_date,
-                           description, documents, status, solicitation_number)
-        VALUES (:ref_no, :title, :agency, :category, :abc, :mode,
-                :area_of_delivery, :published_date, :closing_date,
-                :description, :documents, :status, :solicitation_number)
-        ON CONFLICT(ref_no) DO UPDATE SET
-            title=excluded.title,
-            agency=excluded.agency,
-            category=excluded.category,
-            abc=COALESCE(excluded.abc, notices.abc),
-            mode=COALESCE(excluded.mode, notices.mode),
-            area_of_delivery=COALESCE(excluded.area_of_delivery, notices.area_of_delivery),
-            published_date=excluded.published_date,
-            closing_date=excluded.closing_date,
-            description=COALESCE(excluded.description, notices.description),
-            documents=COALESCE(excluded.documents, notices.documents),
-            status=COALESCE(NULLIF(excluded.status, ''), notices.status),
-            solicitation_number=COALESCE(NULLIF(excluded.solicitation_number, ''), notices.solicitation_number),
-            cached_at=datetime('now')
-    """, {
+    values = {
         "ref_no": notice.get("ref_no", ""),
         "title": notice.get("title", ""),
         "agency": notice.get("agency", ""),
@@ -204,22 +187,63 @@ def upsert_notice(conn: sqlite3.Connection, notice: dict[str, Any]) -> None:
         "documents": notice.get("documents", ""),
         "status": notice.get("status", ""),
         "solicitation_number": notice.get("solicitation_number", ""),
-    })
+    }
+    existing = conn.execute("SELECT * FROM notices WHERE ref_no = ?", (values["ref_no"],)).fetchone()
+    if existing:
+        old = dict(existing)
+        for key, value in values.items():
+            if value in (None, "") and old.get(key) not in (None, ""):
+                values[key] = old[key]
+
+    conn.execute("""
+        INSERT INTO notices (ref_no, title, agency, category, abc, mode,
+                           area_of_delivery, published_date, closing_date,
+                           description, documents, status, solicitation_number)
+        VALUES (:ref_no, :title, :agency, :category, :abc, :mode,
+                :area_of_delivery, :published_date, :closing_date,
+                :description, :documents, :status, :solicitation_number)
+        ON CONFLICT(ref_no) DO UPDATE SET
+            title=COALESCE(NULLIF(excluded.title, ''), notices.title),
+            agency=COALESCE(NULLIF(excluded.agency, ''), notices.agency),
+            category=COALESCE(NULLIF(excluded.category, ''), notices.category),
+            abc=COALESCE(excluded.abc, notices.abc),
+            mode=COALESCE(excluded.mode, notices.mode),
+            area_of_delivery=COALESCE(excluded.area_of_delivery, notices.area_of_delivery),
+            published_date=COALESCE(NULLIF(excluded.published_date, ''), notices.published_date),
+            closing_date=COALESCE(NULLIF(excluded.closing_date, ''), notices.closing_date),
+            description=COALESCE(excluded.description, notices.description),
+            documents=COALESCE(excluded.documents, notices.documents),
+            status=COALESCE(NULLIF(excluded.status, ''), notices.status),
+            solicitation_number=COALESCE(NULLIF(excluded.solicitation_number, ''), notices.solicitation_number),
+            cached_at=datetime('now')
+    """, values)
 
     # Also store as OCDS release
     try:
-        release = Release.from_philgeps_dict(notice)
+        release = Release.from_philgeps_dict(values)
         upsert_release(conn, release)
     except Exception:
         pass  # Non-critical — original cache still works
 
 
 def upsert_award(conn: sqlite3.Connection, award: dict[str, Any]) -> None:
-    """Insert an award record."""
-    conn.execute("""
-        INSERT INTO awards (ref_no, title, agency, supplier, amount, award_date, mode)
-        VALUES (:ref_no, :title, :agency, :supplier, :amount, :award_date, :mode)
-    """, award)
+    """Insert or refresh an imported supplier award without duplicating imports."""
+    values = {
+        "ref_no": award.get("ref_no", ""), "title": award.get("title", ""),
+        "agency": award.get("agency", ""), "supplier": award.get("supplier", ""),
+        "amount": award.get("amount"), "award_date": award.get("award_date", ""),
+        "mode": award.get("mode", ""),
+    }
+    cursor = conn.execute("""
+        UPDATE awards SET title=?, agency=?, amount=?, award_date=?, mode=?, cached_at=datetime('now')
+        WHERE ref_no=? AND supplier=?
+    """, (values["title"], values["agency"], values["amount"], values["award_date"],
+          values["mode"], values["ref_no"], values["supplier"]))
+    if cursor.rowcount == 0:
+        conn.execute("""
+            INSERT INTO awards (ref_no, title, agency, supplier, amount, award_date, mode)
+            VALUES (:ref_no, :title, :agency, :supplier, :amount, :award_date, :mode)
+        """, values)
 
 
 def search_notices(
@@ -342,8 +366,9 @@ def upsert_award_release(conn: sqlite3.Connection, award: dict[str, Any]) -> Non
         currency="PHP",
     ) if amount else None
 
+    supplier_key = re.sub(r"[^a-z0-9]+", "-", supplier_name.lower()).strip("-") or "unknown"
     award_model = AwardModel(
-        id=ref_no,
+        id=f"{ref_no}-{supplier_key}",
         title=award.get("title", ""),
         date=award.get("award_date", ""),
         value=award_value,
@@ -359,5 +384,21 @@ def upsert_award_release(conn: sqlite3.Connection, award: dict[str, Any]) -> Non
         parties=parties,
         awards=[award_model],
     )
+
+    existing = conn.execute(
+        "SELECT release_json FROM releases WHERE ocid=? AND release_id=?",
+        (ocid, release.id),
+    ).fetchone()
+    if existing:
+        try:
+            previous = Release.model_validate(json.loads(existing["release_json"]))
+            awards_by_id = {item.id: item for item in previous.awards}
+            awards_by_id[award_model.id] = award_model
+            parties_by_id = {item.id: item for item in previous.parties}
+            parties_by_id.update({item.id: item for item in parties})
+            release.awards = list(awards_by_id.values())
+            release.parties = list(parties_by_id.values())
+        except (ValueError, TypeError):
+            pass
 
     upsert_release(conn, release)

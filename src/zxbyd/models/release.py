@@ -137,7 +137,7 @@ class Release(BaseModel):
             id=data.get("solicitation_number", "") or ref_no,
             title=data.get("title", ""),
             description=data.get("description", ""),
-            status=data.get("status", ""),
+            status=_ocds_tender_status(data.get("status", "")),
             procuring_entity=procuring_entity,
             value=tender_value,
             procurement_method_details=data.get("mode", ""),
@@ -147,10 +147,9 @@ class Release(BaseModel):
             ),
         )
 
-        # Determine tag
+        # This source provides notice status only. It does not supply award
+        # details, so do not claim that this release contains an award section.
         tag = ["tender"]
-        if data.get("status", "").lower() in ("awarded", "closed"):
-            tag = ["tender", "award"]
 
         return cls(
             ocid=ocid,
@@ -161,6 +160,20 @@ class Release(BaseModel):
             parties=parties,
             tender=tender,
         )
+
+
+def _ocds_tender_status(raw_status: str | None) -> str | None:
+    """Map PhilGEPS status labels to the OCDS tender status codelist."""
+    status = (raw_status or "").strip().lower()
+    return {
+        "active": "active",
+        "cancelled": "cancelled",
+        "canceled": "cancelled",
+        "withdrawn": "withdrawn",
+        "closed": "complete",
+        "awarded": "complete",
+        "completed": "complete",
+    }.get(status)
 
 
 class ReleasePackage(BaseModel):

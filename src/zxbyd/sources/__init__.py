@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+import warnings
 from datetime import datetime
 from typing import Any
 
@@ -290,6 +291,7 @@ def search(query: str, max_pages: int = 1) -> list[dict[str, Any]]:
         r = _request_with_retry("GET", SEARCH_URL)
         if r.status_code != 200:
             logger.error(f"Initial page returned {r.status_code}")
+            warnings.warn(f"PhilGEPS search returned HTTP {r.status_code}; results may be incomplete", RuntimeWarning)
             return all_results
         tree = HTMLParser(r.text)
         state = _extract_viewstate(tree)
@@ -302,6 +304,7 @@ def search(query: str, max_pages: int = 1) -> list[dict[str, Any]]:
         })
         if r2.status_code != 200:
             logger.error(f"Search tab activation returned {r2.status_code}")
+            warnings.warn(f"PhilGEPS search activation returned HTTP {r2.status_code}; results may be incomplete", RuntimeWarning)
             return all_results
         tree2 = HTMLParser(r2.text)
         state2 = _extract_viewstate(tree2)
@@ -316,6 +319,7 @@ def search(query: str, max_pages: int = 1) -> list[dict[str, Any]]:
         })
         if r3.status_code != 200:
             logger.error(f"Search submission returned {r3.status_code}")
+            warnings.warn(f"PhilGEPS search returned HTTP {r3.status_code}; results may be incomplete", RuntimeWarning)
             return all_results
 
         results, max_page = _parse_search_results(r3.text)
@@ -350,6 +354,7 @@ def search(query: str, max_pages: int = 1) -> list[dict[str, Any]]:
 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error during search: {e}")
+        warnings.warn(f"PhilGEPS search failed ({e}); returned results may be incomplete", RuntimeWarning)
 
     return all_results
 

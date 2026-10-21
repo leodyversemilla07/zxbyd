@@ -1,8 +1,8 @@
-"""Market benchmark prices for Philippine government procurement.
+"""Unverified heuristic reference prices for procurement review.
 
-Conservative per-unit prices in PHP for common procurement items.
-Used by heuristics to detect price anomalies.
-Updated for 2025-2026 Philippine market conditions.
+Values are manually configured PHP amounts. They have no attached source,
+specification, or validation date and must not be interpreted as current market
+prices. Findings using these values are low-confidence prompts for review.
 """
 
 from __future__ import annotations

@@ -9,14 +9,13 @@ Minimal tool. Serious purpose.
 - Local-first procurement scrutiny
 - Explainable risk flags (not verdicts)
 - RA 12009 + IRR baseline
-- **OCDS-compliant** data models (Open Contracting Data Standard v1.1.5)
+- OCDS-shaped Pydantic models for structured exports
 
 ## Install
 
 ```bash
 uv sync
-# For browser/scraper support:
-uv sync --all-extras && playwright install chromium
+# Scraping currently uses httpx; the browser extra is optional for future use.
 ```
 
 ## Usage
@@ -48,6 +47,8 @@ zxbyd analysis overprice "laptop" --threshold 150
 zxbyd analysis repeat --min-count 3
 zxbyd analysis split "DICT" --gap-days 30
 zxbyd analysis network "ACME CORPORATION"
+zxbyd analysis watch "DICT" --markdown
+zxbyd analysis compare "DICT" "DepEd"
 ```
 
 ## Architecture
@@ -55,7 +56,7 @@ zxbyd analysis network "ACME CORPORATION"
 ```
 src/zxbyd/
 ├── main.py              # Typer CLI entrypoint
-├── models/              # OCDS-compliant Pydantic data models
+├── models/              # OCDS-shaped Pydantic data models
 │   ├── release.py       # Release + ReleasePackage (top-level OCDS)
 │   ├── tender.py        # Tender stage
 │   ├── award.py         # Award stage
@@ -67,7 +68,7 @@ src/zxbyd/
 ├── commands/            # Typer CLI command groups
 ├── sources/             # PhilGEPS scraper (httpx + selectolax)
 ├── analysis/            # Anomaly detection heuristics
-│   ├── benchmarks.py    # Market price benchmarks
+│   ├── benchmarks.py    # Unverified reference prices for heuristic review
 │   ├── heuristics.py    # Unit extraction, price anomalies, etc.
 │   └── __init__.py      # Probe orchestrator + Finding/ProbeResult
 ├── storage/             # OCDS-aware SQLite cache
@@ -81,12 +82,14 @@ src/zxbyd/
 Data stored at `~/.zxbyd/zxbyd.db` with both original flat schema and OCDS JSON. Override with:
 
 ```bash
-export BIDX_CACHE_DIR=/path/to/dir
+export ZXBYD_CACHE_DIR=/path/to/dir
 ```
+
+`BIDX_CACHE_DIR` remains supported for existing setups.
 
 ## OCDS Compatibility
 
-zxbyd uses **Pydantic v2** models that follow the [Open Contracting Data Standard (OCDS)](https://standard.open-contracting.org/) v1.1.5 schema:
+zxbyd uses Pydantic v2 models shaped around the [Open Contracting Data Standard (OCDS)](https://standard.open-contracting.org/) 1.1 release. The project does not currently validate exports against the official OCDS JSON Schema. PhilGEPS notice pages also do not provide award details for every notice, so an “Awarded” status alone is not exported as an award record.
 
 | PhilGEPS field    | OCDS mapping                    |
 |-------------------|---------------------------------|
@@ -101,7 +104,11 @@ zxbyd uses **Pydantic v2** models that follow the [Open Contracting Data Standar
 | `status`          | `tender.status`                 |
 | `solicitation_no` | `tender.id`                     |
 
-The OCDS data model enables interoperability with global procurement analysis tools (Kingfisher, OCDS Kit, etc.) and aligns with PS-DBM's commitment to OCDS adoption under RA 12009.
+The model provides an interoperability starting point; validate exports against the official schema before treating them as publishable OCDS data.
+
+## Analysis limits
+
+Price references in zxbyd are unverified heuristic values, not sourced market prices. Price findings are low-confidence review leads and may compare unlike specifications or costs included in an ABC. Split-contract findings are based on similar titles published close together and are not legal determinations. zxbyd does not currently flag procurement methods as unlawful based on a single fixed ABC threshold.
 
 ## License
 

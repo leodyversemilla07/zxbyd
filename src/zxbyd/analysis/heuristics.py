@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Any
 
 from zxbyd.analysis.benchmarks import BENCHMARKS, lookup_benchmark, get_all_benchmark_keys
@@ -316,7 +317,13 @@ def detect_split_contracts(
     agency: str,
     gap_days: int = 30,
 ) -> list[dict[str, Any]]:
-    """Detect potential contract splitting for an agency."""
+    """Find same-agency notices for similar work published close together.
+
+    These are review candidates only. Similarity and timing are deliberately
+    exposed as evidence; neither establishes unlawful contract splitting.
+    """
+    if gap_days < 0:
+        raise ValueError("gap_days must be non-negative")
     rows = conn.execute("""
         SELECT ref_no, title, agency, abc, published_date
         FROM notices
@@ -328,18 +335,56 @@ def detect_split_contracts(
     notices = [dict(r) for r in rows]
     candidates = []
 
+    def parsed_date(value: str) -> date | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+        except ValueError:
+            for fmt in ("%b %d, %Y", "%B %d, %Y", "%m/%d/%Y", "%d/%m/%Y"):
+                try:
+                    return datetime.strptime(value, fmt).date()
+                except ValueError:
+                    continue
+        return None
+
+    ignored = {"supply", "delivery", "procurement", "purchase", "of", "for", "and",
+               "the", "with", "project", "various", "provision", "services", "goods"}
+
+    def title_tokens(value: str) -> set[str]:
+        return {token for token in re.findall(r"[a-z0-9]+", (value or "").lower())
+                if len(token) > 2 and token not in ignored}
+
     for i, n in enumerate(notices):
-        if n["abc"] and n["abc"] < 500000:
-            related = []
-            for j, m in enumerate(notices):
-                if i != j and m["abc"] and m["abc"] < 500000:
-                    related.append(m)
-            if len(related) >= 2:
-                candidates.append({
-                    "notice": n,
-                    "related_count": len(related),
-                    "total_value": sum(r["abc"] for r in related if r["abc"]),
-                })
+        n_date = parsed_date(n.get("published_date", ""))
+        n_tokens = title_tokens(n.get("title", ""))
+        if n_date is None or not n_tokens:
+            continue
+        related = []
+        for j, m in enumerate(notices):
+            if i == j:
+                continue
+            m_date = parsed_date(m.get("published_date", ""))
+            m_tokens = title_tokens(m.get("title", ""))
+            if m_date is None or not m_tokens or abs((m_date - n_date).days) > gap_days:
+                continue
+            overlap = len(n_tokens & m_tokens) / len(n_tokens | m_tokens)
+            if overlap >= 0.5:
+                related.append(m)
+        if len(related) >= 2:
+            related_refs = sorted(m["ref_no"] for m in related)
+            group_refs = sorted({n["ref_no"], *related_refs})
+            # Avoid reporting the same group once for every member notice.
+            if any(c["group_refs"] == group_refs for c in candidates):
+                continue
+            candidates.append({
+                "notice": n,
+                "related_count": len(related),
+                "total_value": sum((r.get("abc") or 0) for r in [n, *related]),
+                "related_refs": related_refs,
+                "group_refs": group_refs,
+                "gap_days": gap_days,
+            })
 
     return candidates
 
