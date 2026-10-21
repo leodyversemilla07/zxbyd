@@ -24,32 +24,28 @@ def show(
 
     from zxbyd.ui import info, show_notice_detail, show_release_detail, error
     from zxbyd.data import connection, upsert_notice, upsert_release
-    from zxbyd.storage import search_releases
+    from zxbyd.storage import get_notice_release
     from zxbyd.models.release import Release
 
     # Try cache first
     if not force:
         with connection() as conn:
-            # Check OCDS cache
-            ocds_results = search_releases(conn, query=ref_id, limit=1)
-            if ocds_results:
-                release = ocds_results[0]
-                # Confirm the ref_no matches
-                if ref_id in release.ocid:
-                    if as_json:
-                        typer.echo(json_mod.dumps(
-                            release.model_dump(mode="json", by_alias=True),
-                            indent=2, default=str,
-                        ))
-                        return
-                    if ocds:
-                        show_release_detail(release)
-                        info(f"OCDS release: {release.ocid}")
-                        return
-                    # Fall through to plain detail (might not have all fields)
-                    show_release_detail(release)
-                    info(f"Showing cached OCDS release for {ref_id}")
+            # Prefer the exact process's tender release over newer award events.
+            release = get_notice_release(conn, ref_id)
+            if release is not None:
+                if as_json:
+                    typer.echo(json_mod.dumps(
+                        release.model_dump(mode="json", by_alias=True),
+                        indent=2, default=str,
+                    ))
                     return
+                if ocds:
+                    show_release_detail(release)
+                    info(f"OCDS release: {release.ocid}")
+                    return
+                show_release_detail(release)
+                info(f"Showing cached OCDS release for {ref_id}")
+                return
 
             # Legacy cache fallback
             row = conn.execute(

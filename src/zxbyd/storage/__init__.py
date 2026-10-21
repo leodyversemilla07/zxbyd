@@ -166,6 +166,29 @@ def search_releases(
     return results
 
 
+def get_notice_release(conn: sqlite3.Connection, ref_no: str) -> Release | None:
+    """Return the cached tender release for an exact PhilGEPS reference.
+
+    Award releases share an OCID with their tender process, so detail lookups
+    must select a release containing a tender rather than the newest event.
+    """
+    ocid = f"ocds-zxbyd-{ref_no}"
+    rows = conn.execute("""
+        SELECT release_json FROM releases
+        WHERE ref_no = ? OR ocid = ?
+        ORDER BY cached_at DESC
+    """, (ref_no, ocid)).fetchall()
+
+    for row in rows:
+        try:
+            release = Release.model_validate(json.loads(row["release_json"]))
+        except (ValueError, TypeError):
+            continue
+        if release.tender is not None:
+            return release
+    return None
+
+
 # ── Backward-compatible original API ───────────────────────────────
 
 def upsert_notice(conn: sqlite3.Connection, notice: dict[str, Any]) -> None:

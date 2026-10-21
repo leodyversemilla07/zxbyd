@@ -189,12 +189,53 @@ def test_parse_date_philgeps_quirks():
     assert _parse_date("21/07/2026 14:30 PM") == "2026-07-21 14:30"
     # Already 12-hour passes through unchanged
     assert _parse_date("21/07/2026 09:00 AM") == "2026-07-21 09:00"
+    # Ambiguous numeric dates follow the day-first PhilGEPS locale.
+    assert _parse_date("04/05/2026") == "2026-05-04"
+    assert _parse_date("04/05/2026 13:00 PM") == "2026-05-04 13:00"
+    # Month-first input remains parseable when the second field cannot be a month.
+    assert _parse_date("1/15/2025") == "2025-01-15"
     # ISO format
     assert _parse_date("2026-01-07") == "2026-01-07"
     # Empty string
     assert _parse_date("") == ""
     # Whitespace stripped
     assert _parse_date(" 2026-01-07 ") == "2026-01-07"
+
+
+def test_notice_release_lookup_prefers_tender_and_matches_exact_ref(in_memory_db):
+    """Detail lookups ignore newer award events and substring ref matches."""
+    from zxbyd.models.award import Award
+    from zxbyd.models.release import Release
+    from zxbyd.storage import get_notice_release, upsert_release
+
+    award = Release(
+        ocid="ocds-zxbyd-555",
+        id="555-award",
+        tag=["award"],
+        awards=[Award(id="555-vendor", title="Award event")],
+    )
+    target_tender = Release(
+        ocid="ocds-zxbyd-555",
+        id="555",
+        tag=["tender"],
+        tender={"id": "555", "title": "Target notice"},
+    )
+    substring_tender = Release(
+        ocid="ocds-zxbyd-1555",
+        id="1555",
+        tag=["tender"],
+        tender={"id": "1555", "title": "Wrong notice"},
+    )
+    upsert_release(in_memory_db, target_tender)
+    upsert_release(in_memory_db, award)
+    upsert_release(in_memory_db, substring_tender)
+
+    found = get_notice_release(in_memory_db, "555")
+
+    assert found is not None
+    assert found.id == "555"
+    assert found.tender is not None
+    assert found.tender.title == "Target notice"
 
 
 def test_is_mixed_procurement():

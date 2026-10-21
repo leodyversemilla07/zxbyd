@@ -131,10 +131,10 @@ def _parse_date(text: str) -> str:
         "%B %d, %Y %I:%M %p",
         "%b %d, %Y",
         "%B %d, %Y",
-        "%m/%d/%Y %I:%M %p",
-        "%m/%d/%Y",
         "%d/%m/%Y %I:%M %p",  # European day-first, common in PH locale
         "%d/%m/%Y",
+        "%m/%d/%Y %I:%M %p",
+        "%m/%d/%Y",
         "%Y-%m-%d",
         "%d %B %Y",
         "%d %b %Y",
