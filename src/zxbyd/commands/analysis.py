@@ -150,7 +150,7 @@ def probe(
 def overprice(
     category: str = typer.Argument(default="", help="Category to compare (e.g., 'laptop')."),
     pages: int = typer.Option(2, "--pages", "-p", help="Pages to scrape."),
-    threshold: int = typer.Option(50, "--threshold", "-t", help="Price spread %% to flag."),
+    threshold: int = typer.Option(50, "--threshold", "-t", help="Minimum percent above the zxbyd reference to flag."),
     cache_only: bool = typer.Option(False, "--cache-only", help="Only search local cache."),
 ) -> None:
     """Detect pricing anomalies across agencies."""
@@ -189,7 +189,7 @@ def overprice(
     anomalies = [a for a in anomalies if a["overcharge_pct"] >= threshold]
 
     if not anomalies:
-        console.print(f"[dim]No anomalies above {threshold}% threshold.[/dim]")
+        console.print(f"[dim]No reference spreads above {threshold}%.[/dim]")
         return
 
     from rich.table import Table
@@ -198,7 +198,7 @@ def overprice(
     table.add_column("Agency", max_width=30)
     table.add_column("Unit Price", justify="right", style="red")
     table.add_column("zxbyd Reference", justify="right", style="green")
-    table.add_column("Overcharge", justify="right", style="bold red")
+    table.add_column("Above reference", justify="right", style="bold red")
     table.add_column("Units", justify="center")
 
     for a in sorted(anomalies, key=lambda x: x["overcharge_pct"], reverse=True):
@@ -207,13 +207,13 @@ def overprice(
             a["agency"][:30],
             f"PHP {a['unit_price']:,.0f}",
             f"PHP {a['benchmark']:,.0f}",
-            f"+{a['overcharge_pct']:.0f}%",
+            f"+{a['reference_spread_pct']:.0f}%",
             str(a["unit_count"]),
         )
 
     console.print(table)
     info("zxbyd reference values are unverified heuristics, not sourced market prices.")
-    info(f"{len(anomalies)} anomaly/anomalies above {threshold}% threshold")
+    info(f"{len(anomalies)} reference spread finding(s) above {threshold}%")
 
 
 @analysis_app.command()
@@ -400,26 +400,26 @@ def _render_watch_markdown(
     a(f"| ABC range | {fmt_php(stats.get('min_abc') or 0)} — {fmt_php(stats.get('max_abc') or 0)} |")
     a(f"| Categories | {stats.get('category_count', 0):,} |")
     a(f"| Procurement modes | {stats.get('mode_count', 0):,} |")
-    a(f"| Severity filter | `{severity}` and above |")
+    a(f"| Minimum finding confidence | `{severity}` |")
     a("")
 
     # Price anomalies
     a(f"## Price Anomalies ({len(anomalies)})")
     a("")
     if not anomalies:
-        a(f"_No price anomalies at `{severity}` severity._")
+        a(f"_No price-reference findings at `{severity}` confidence or above._")
         a("")
     else:
-        a("| Sev | Ref # | Category | Unit Price | zxbyd Reference | Over |")
-        a("|-----|-------|----------|------------|-----------|------|")
+        a("| Confidence | Ref # | Category | Unit Price | zxbyd Reference | Above ref |")
+        a("|------------|-------|----------|------------|-----------------|-----------|")
         for x in anomalies:
-            sev_label = x.get("severity", "?").upper()
+            confidence_label = x.get("confidence", "?").upper()
             a(
-                f"| {sev_label} | `{x.get('ref_no', '—')}` "
+                f"| {confidence_label} | `{x.get('ref_no', '—')}` "
                 f"| {x.get('unit_type') or '—'} "
                 f"| {fmt_php(x.get('unit_price'))} "
                 f"| {fmt_php(x.get('benchmark'))} "
-                f"| **+{x.get('overcharge_pct', 0):.0f}%** |"
+                f"| **+{x.get('reference_spread_pct', 0):.0f}%** |"
             )
         a("")
 
@@ -493,9 +493,9 @@ def watch(
     agency: str = typer.Argument(help="Agency name to watch (e.g., 'DepEd', 'DICT')."),
     pages: int = typer.Option(2, "--pages", "-p", help="Pages to scrape (per keyword)."),
     severity: str = typer.Option(
-        "medium",
+        "low",
         "--severity",
-        help="Minimum severity to flag (low/medium/high).",
+        help="Minimum finding confidence (low/medium/high); price-reference findings are low.",
     ),
     max_findings: int = typer.Option(
         5,
@@ -667,21 +667,17 @@ def watch(
             except Exception:
                 continue
 
-        # Sort by overcharge
+        # Sort by reference spread for display; spread magnitude is not confidence.
         anomalies.sort(key=lambda x: x.get("overcharge_pct", 0), reverse=True)
 
-        # Filter by severity
+        # Price-reference findings are all low confidence because the configured
+        # values are not independently sourced. A large percentage spread does not
+        # increase the reliability of an unverified reference.
         filtered_anomalies = []
-        for a in anomalies[: max_findings * 2]:
-            oc = a.get("overcharge_pct", 0)
-            if oc >= 100:
-                a_severity = "high"
-            elif oc >= 30:
-                a_severity = "medium"
-            else:
-                a_severity = "low"
-            if sev_rank[a_severity] >= sev_rank[severity]:
-                a["severity"] = a_severity
+        for a in anomalies:
+            a["severity"] = "low"
+            a["confidence"] = "low"
+            if sev_rank["low"] >= sev_rank[severity]:
                 filtered_anomalies.append(a)
 
         # Step 6: Top suppliers from cached awards
@@ -757,12 +753,12 @@ def watch(
     # Price anomalies
     if filtered_anomalies:
         table = Table(title=f"Price Anomalies ({len(filtered_anomalies)})", show_lines=True)
-        table.add_column("Sev", width=3)
+        table.add_column("Conf", width=4)
         table.add_column("Ref #", style="cyan", no_wrap=True)
         table.add_column("Category", max_width=15)
         table.add_column("Unit Price", justify="right")
         table.add_column("zxbyd Reference", justify="right")
-        table.add_column("Over", justify="right", style="bold red")
+        table.add_column("Above ref", justify="right", style="bold red")
         for a in filtered_anomalies[:max_findings]:
             sev_icon = {"high": "[red]H[/red]", "medium": "[yellow]M[/yellow]", "low": "[dim]L[/dim]"}.get(a["severity"], "?")
             table.add_row(
@@ -771,11 +767,11 @@ def watch(
                 (a.get("unit_type") or "")[:15],
                 fmt_php(a.get("unit_price")),
                 fmt_php(a.get("benchmark")),
-                f"+{a['overcharge_pct']:.0f}%",
+                f"+{a['reference_spread_pct']:.0f}%",
             )
         console.print(table)
     else:
-        console.print(f"\n[dim]No price anomalies at '{severity}' severity.[/dim]")
+        console.print(f"\n[dim]No price-reference findings at '{severity}' confidence or above.[/dim]")
 
     # Mixed procurements
     if mixed_rows:

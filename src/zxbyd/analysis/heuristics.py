@@ -290,6 +290,7 @@ def find_price_anomalies(
                 "unit_price": unit_price,
                 "benchmark": benchmark,
                 "overcharge_pct": overcharge_pct,
+                "reference_spread_pct": overcharge_pct,
                 "confidence": result.confidence,
             })
 

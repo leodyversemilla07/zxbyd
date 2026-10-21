@@ -10,7 +10,7 @@ import typer
 def report(
     query: str = typer.Argument(help="Category to report on (e.g., 'laptop', 'desktop', 'server')."),
     pages: int = typer.Option(2, "--pages", "-p", help="Pages to scrape."),
-    threshold: int = typer.Option(20, "--threshold", "-t", help="Overcharge %% to flag."),
+    threshold: int = typer.Option(20, "--threshold", "-t", help="Minimum percent above the zxbyd reference to flag."),
     top: int = typer.Option(10, "--top", "-n", help="Max findings to show."),
     as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
     cache_only: bool = typer.Option(False, "--cache-only", help="Only search local cache."),
@@ -86,6 +86,7 @@ def report(
                     "unit_price": a["unit_price"],
                     "benchmark": a["benchmark"],
                     "overcharge_pct": a["overcharge_pct"],
+                    "reference_spread_pct": a["reference_spread_pct"],
                 }
                 for a in anomalies[:top]
             ],
@@ -114,7 +115,7 @@ def report(
     console.print(Panel(header, border_style="cyan"))
 
     if not anomalies:
-        console.print(f"\n[dim]No price anomalies above {threshold}% threshold.[/dim]")
+        console.print(f"\n[dim]No reference spreads above {threshold}%.[/dim]")
         if total_enriched < 3:
             console.print("[dim]Tip: Try --pages 3 for more coverage.[/dim]")
         return
@@ -129,7 +130,7 @@ def report(
     table.add_column("Units", justify="center")
     table.add_column("Unit Price", justify="right", style="red")
     table.add_column("zxbyd Reference", justify="right")
-    table.add_column("Over", justify="right", style="bold red")
+    table.add_column("Above ref", justify="right", style="bold red")
 
     for i, a in enumerate(anomalies[:top], 1):
         table.add_row(
@@ -141,7 +142,7 @@ def report(
             str(a["unit_count"]),
             f"PHP {a['unit_price']:,.0f}",
             f"PHP {a['benchmark']:,.0f}",
-            f"+{a['overcharge_pct']:.0f}%",
+            f"+{a['reference_spread_pct']:.0f}%",
         )
 
     console.print(table)
@@ -153,7 +154,7 @@ def report(
             f"  [{i}] {a['agency']}: "
             f"PHP {a['abc']:,.0f} for {a['unit_count']} {a['unit_type']}(s) = "
             f"PHP {a['unit_price']:,.0f}/unit "
-            f"(zxbyd reference PHP {a['benchmark']:,.0f}, +{a['overcharge_pct']:.0f}%)"
+            f"(zxbyd reference PHP {a['benchmark']:,.0f}, +{a['reference_spread_pct']:.0f}% above reference)"
         )
         console.print(
             f"      Ref: https://notices.philgeps.gov.ph/GEPSNONPILOT/Tender/"

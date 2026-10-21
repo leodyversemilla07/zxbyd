@@ -79,11 +79,11 @@ def probe(
     for a in anomalies[:max_findings]:
         findings.append(Finding(
             reason_code="PRICE_ANOMALY",
-            title=f"Overpriced {a['unit_type']}: {a['agency']}",
+            title=f"Price above reference for {a['unit_type']}: {a['agency']}",
             description=(
                 f"{a['agency']} budgeting PHP {a['unit_price']:,.0f}/unit for {a['unit_type']}s "
                 f"vs zxbyd reference PHP {a['benchmark']:,.0f}/unit "
-                f"({a['overcharge_pct']:.0f}% over)"
+                f"({a['reference_spread_pct']:.0f}% above reference)"
             ),
             confidence=Confidence.LOW,
             evidence=[
