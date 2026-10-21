@@ -142,7 +142,8 @@ def test_release_model_dump_simple():
     assert flat["agency"] == "DICT"
     assert flat["abc"] == 50000.0
     assert flat["mode"] == "Shopping"
-    assert flat["status"] == "Active"
+    # OCDS tender status codelist values are lowercase.
+    assert flat["status"] == "active"
 
 
 # ── Heuristic tests ────────────────────────────────────────────────
